@@ -15,9 +15,13 @@ import re
 import json
 import time
 import uuid
+import hashlib
 import tempfile
 import requests
 from typing import Dict, Any, Optional
+
+# Persistent HTTP session to reuse TCP connections across turns (Strategy 2)
+_narakeet_session = requests.Session()
 
 # Suppress gRPC fork logs on macOS
 os.environ["GRPC_VERBOSITY"] = "ERROR"
@@ -46,11 +50,27 @@ except Exception:
     SOUNDDEVICE_AVAILABLE = False
 
 
+DEFAULT_SYSTEM_PROMPT = """Та Хаан Банкны албан ёсны цахим туслах Амирлан байна.
+Хэрэглэгчийн асуултад ДАНДАА МАКСИМУМ ЭЕЛДЭГ, АЛБАН ЁСНЫ, СЭТГЭЛД ХҮРСЭН МОНГОЛ ХЭЛЭЭР хариулна.
+
+Хэрэглэгчийн асуулт: "{user_query}"
+Банкны албан ёсны эх сурвалж:
+{search_results}
+{verified_context}
+
+ДҮРЭМ:
+1. Хариултаа 'Эрхэм харилцагч танд энэ өдрийн мэнд хүргэе' гэж хүндэтгэлтэйгээр эхлүүлнэ.
+2. Мэдээллийг товч, цэгцтэй, сонсоход хялбар 2-3 өгүүлбэрт (нийт 40-50 үгэнд, 300 тэмдэгтээс хэтрүүлэхгүй) багтаана. Дуу хоолойн яриа тул нуршуу биш, товч шууд хариулна.
+3. Нэмэлт дэлгэрэнгүй мэдээллийг 1800-1917 лавлах утас болон khanbank.com хаягаас авахыг эелдгээр зөвлөнө.
+4. Хариулт нь дуу хоолойгоор ярихад сонсголонтой байх ёстой тул элдэв од, хашилт, тусгай тэмдэгт ашиглахгүйгээр цэвэр энгийн монгол текстээр бичнэ үү."""
+
+
 class AmirlanVoicebot:
     def __init__(self):
         self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "project-1d76ba00-25b9-47dd-8d3")
         self.gcp_location = os.getenv("GCP_LOCATION", "us-central1")
         self.narakeet_api_key = os.getenv("NARAKEET_API_KEY")
+        self.narakeet_session = _narakeet_session
         
         # Chirp 3 uses multi-region 'us' endpoint
         self.stt_location = "us"
@@ -79,6 +99,60 @@ class AmirlanVoicebot:
         self.input_dir = os.path.join(self.base_dir, "input-audio")
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.input_dir, exist_ok=True)
+
+        # Developer Mode & Runtime State
+        self.DEFAULT_SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT
+        self.system_prompt_template = DEFAULT_SYSTEM_PROMPT
+        self.caching_enabled = True
+        self.request_history = []
+        self.system_logs = []
+        self.latest_evaluations = None
+
+    def log_event(self, stage: str, message: str, level: str = "INFO", meta: Optional[Dict[str, Any]] = None):
+        """Records structured telemetry logs for Developer Mode monitoring."""
+        event = {
+            "timestamp": time.strftime("%H:%M:%S"),
+            "stage": stage,
+            "message": message,
+            "level": level,
+            "meta": meta or {}
+        }
+        self.system_logs.append(event)
+        if len(self.system_logs) > 150:
+            self.system_logs.pop(0)
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """Calculates current TTS memoization disk usage statistics."""
+        count = 0
+        total_bytes = 0
+        if os.path.exists(self.output_dir):
+            for f in os.listdir(self.output_dir):
+                if f.startswith("amirlan_cache_"):
+                    p = os.path.join(self.output_dir, f)
+                    if os.path.isfile(p):
+                        count += 1
+                        total_bytes += os.path.getsize(p)
+        return {
+            "count": count,
+            "size_kb": round(total_bytes / 1024, 1),
+            "size_mb": round(total_bytes / (1024 * 1024), 2),
+            "enabled": self.caching_enabled
+        }
+
+    def clear_tts_cache(self) -> int:
+        """Purges all memoized TTS audio files from output-audio/."""
+        cleared = 0
+        if os.path.exists(self.output_dir):
+            for f in os.listdir(self.output_dir):
+                if f.startswith("amirlan_cache_"):
+                    p = os.path.join(self.output_dir, f)
+                    try:
+                        os.remove(p)
+                        cleared += 1
+                    except Exception as e:
+                        print(f"Error removing {p}: {e}")
+        self.log_event("Cache", f"Purged {cleared} TTS audio cache files", level="WARN")
+        return cleared
 
     # =========================================================================
     # STAGE 1: Call Intake (Speech-to-Text via Google Cloud Chirp 3)
@@ -246,7 +320,7 @@ class AmirlanVoicebot:
     # STAGE 5: Response Generation (Narakeet .m4a with Ganbaatar voice)
     # =========================================================================
     def generate_mongolian_response(self, user_query: str, retrieval_data: Dict[str, Any], is_escalation: bool = False) -> str:
-        """Formulates high-standard, polite Mongolian banking response."""
+        """Formulates high-standard, polite Mongolian banking response using prompt template."""
         if is_escalation:
             return (
                 "Эрхэм харилцагч танд энэ өдрийн мэнд хүргэе. "
@@ -255,19 +329,20 @@ class AmirlanVoicebot:
                 "түр хүлээнэ үү, бид таныг хамгийн ойрын оператортой холбож өгөхөд бэлэн байна."
             )
 
-        prompt = f"""Та Хаан Банкны албан ёсны цахим туслах Амирлан байна.
-Хэрэглэгчийн асуултад ДАНДАА МАКСИМУМ ЭЕЛДЭГ, АЛБАН ЁСНЫ, СЭТГЭЛД ХҮРСЭН МОНГОЛ ХЭЛЭЭР хариулна.
-
-Хэрэглэгчийн асуулт: "{user_query}"
-Банкны албан ёсны эх сурвалж:
-{retrieval_data['search_results']}
-{retrieval_data['verified_context']}
-
-ДҮРЭМ:
-1. Хариултаа 'Эрхэм харилцагч танд энэ өдрийн мэнд хүргэе' гэж хүндэтгэлтэйгээр эхлүүлнэ.
-2. Мэдээллийг товч, цэгцтэй, ойлгомжтой 2-3 өгүүлбэрт (нийт 40-60 үгэнд, 350 тэмдэгтээс хэтрүүлэхгүй) багтаана. Дуу хоолойн ярианд хэт урт хариулт өгөхгүй.
-3. Нэмэлт дэлгэрэнгүй мэдээллийг 1800-1917 лавлах утас болон khanbank.com хаягаас авахыг эелдгээр зөвлөнө.
-4. Хариулт нь дуу хоолойгоор ярихад сонсголонтой байх ёстой тул элдэв од, хашилт, тусгай тэмдэгт ашиглахгүйгээр цэвэр энгийн монгол текстээр бичнэ үү."""
+        try:
+            prompt = self.system_prompt_template.format(
+                user_query=user_query,
+                search_results=retrieval_data.get('search_results', ''),
+                verified_context=retrieval_data.get('verified_context', '')
+            )
+        except Exception:
+            prompt = (
+                f"{self.system_prompt_template}\n\n"
+                f"Хэрэглэгчийн асуулт: \"{user_query}\"\n"
+                f"Банкны албан ёсны эх сурвалж:\n"
+                f"{retrieval_data.get('search_results', '')}\n"
+                f"{retrieval_data.get('verified_context', '')}"
+            )
 
         try:
             res = self.llm.invoke(prompt)
@@ -300,18 +375,60 @@ class AmirlanVoicebot:
             return truncated[:last_space].strip() + "."
         return truncated.strip()
 
-    def synthesize_speech_narakeet(self, text: str, voice: str = "Ganbaatar") -> str:
+    def cleanup_audio_files(self, clear_cache: bool = True) -> int:
+        """
+        Cleans up recorded input audio and synthesized output audio files.
+        When clear_cache is True, removes all files from input-audio and output-audio.
+        """
+        cleaned_count = 0
+        for target_dir in [self.input_dir, self.output_dir]:
+            if not os.path.exists(target_dir):
+                continue
+            for fname in os.listdir(target_dir):
+                if not clear_cache and fname.startswith("amirlan_cache_"):
+                    continue
+                fpath = os.path.join(target_dir, fname)
+                if os.path.isfile(fpath) and not fname.startswith("."):
+                    try:
+                        os.remove(fpath)
+                        cleaned_count += 1
+                    except Exception as e:
+                        print(f"Warning: could not delete {fpath}: {e}")
+        self.log_event("Cleanup", f"Cleaned up {cleaned_count} audio files (clear_cache={clear_cache})")
+        return cleaned_count
+
+    def synthesize_speech_narakeet(self, text: str, voice: str = "Ankhmaa") -> str:
         """
         Synthesizes Mongolian text into high-quality .m4a audio using Narakeet REST API.
-        Saves output audio file to output-audio/ directory.
+        Optimized with:
+        1. HTTP Streaming (stream=True) & chunked disk writes
+        2. Persistent session to reuse TCP / TLS connections across turns
+        3. Response Caching (Memoization toggleable via self.caching_enabled)
+        4. Strict length guard to keep audio snappy and within fast limits.
         """
         if not self.narakeet_api_key:
             raise ValueError("NARAKEET_API_KEY орчны хувьсагч тохируулагдаагүй байна.")
 
-        # Narakeet streaming endpoint strictly requires UTF-8 byte length <= 1024
-        safe_text = self._trim_for_tts(text, max_bytes=950)
-        filename = f"amirlan_{uuid.uuid4().hex[:8]}_{int(time.time())}.m4a"
-        file_path = os.path.join(self.output_dir, filename)
+        valid_voices = {"Ankhmaa", "Ganbaatar"}
+        if voice not in valid_voices:
+            voice = "Ankhmaa"
+
+        safe_text = self._trim_for_tts(text, max_bytes=950).strip()
+        if not safe_text:
+            raise ValueError("Текст хоосон байна.")
+
+        # 3. Response Caching (Memoization if enabled)
+        if self.caching_enabled:
+            cache_hash = hashlib.sha256(f"{voice}:{safe_text}".encode("utf-8")).hexdigest()[:16]
+            filename = f"amirlan_cache_{voice}_{cache_hash}.m4a"
+            file_path = os.path.join(self.output_dir, filename)
+
+            if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+                self.log_event("TTS", f"Memoization cache hit: {filename} (0.0s)", meta={"cached": True, "voice": voice})
+                return filename
+        else:
+            filename = f"amirlan_session_{uuid.uuid4().hex[:8]}_{int(time.time())}.m4a"
+            file_path = os.path.join(self.output_dir, filename)
 
         url = f"https://api.narakeet.com/text-to-speech/m4a?voice={voice}"
         headers = {
@@ -320,13 +437,43 @@ class AmirlanVoicebot:
             "Accept": "application/octet-stream"
         }
 
-        res = requests.post(url, data=safe_text.encode("utf-8"), headers=headers, timeout=45)
+        # 1. Enable HTTP Streaming (stream=True) & 2. Reuse TCP Connection via Session
+        t_req_start = time.time()
+        res = self.narakeet_session.post(
+            url,
+            data=safe_text.encode("utf-8"),
+            headers=headers,
+            stream=True,
+            timeout=45
+        )
+        ttfb = round(time.time() - t_req_start, 3)
 
         content_type = res.headers.get("content-type", "")
-        # Synchronous binary audio returned
+
+        # Synchronous binary audio returned via HTTP stream
         if res.status_code == 200 and "application/json" not in content_type:
-            with open(file_path, "wb") as f:
-                f.write(res.content)
+            temp_path = file_path + ".tmp"
+            t_dl_start = time.time()
+            chunk_count = 0
+            total_bytes = 0
+            with open(temp_path, "wb") as f:
+                for chunk in res.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        chunk_count += 1
+                        total_bytes += len(chunk)
+            os.replace(temp_path, file_path)
+            dl_time = round(time.time() - t_dl_start, 3)
+            tot_tts_time = round(time.time() - t_req_start, 3)
+
+            self.log_event("TTS", f"Streamed {total_bytes}B in {tot_tts_time}s (TTFB: {ttfb}s, Transfer: {dl_time}s, {chunk_count} chunks)", meta={
+                "ttfb": ttfb,
+                "transfer_time": dl_time,
+                "bytes": total_bytes,
+                "chunks": chunk_count,
+                "cached": False,
+                "voice": voice
+            })
             return filename
         
         # Async task polling fallback if statusUrl is returned
@@ -338,21 +485,26 @@ class AmirlanVoicebot:
                     # Poll statusUrl without x-api-key header as per Narakeet docs
                     for _ in range(15):
                         time.sleep(2)
-                        poll_res = requests.get(status_url, timeout=10)
+                        poll_res = self.narakeet_session.get(status_url, timeout=10)
                         if poll_res.status_code == 200:
                             p_info = poll_res.json()
                             if p_info.get("finished"):
                                 audio_url = p_info.get("result")
                                 if audio_url:
-                                    down_res = requests.get(audio_url, timeout=30)
+                                    down_res = self.narakeet_session.get(audio_url, stream=True, timeout=30)
                                     if down_res.status_code == 200:
-                                        with open(file_path, "wb") as f:
-                                            f.write(down_res.content)
-                                        return filename
+                                        temp_path = file_path + ".tmp"
+                                        with open(temp_path, "wb") as f:
+                                            for chunk in down_res.iter_content(chunk_size=8192):
+                                                if chunk:
+                                                    f.write(chunk)
+                                        os.replace(temp_path, file_path)
+                                        return cached_filename
             except Exception as poll_e:
                 print("Narakeet async polling error:", poll_e)
 
-        raise RuntimeError(f"Narakeet TTS Алдаа ({res.status_code}): {res.text[:200]}")
+        error_details = res.text if hasattr(res, "text") else "No details"
+        raise RuntimeError(f"Narakeet TTS Алдаа ({res.status_code}): {error_details[:200]}")
 
     # =========================================================================
     # STAGE 6: Human Escalation Protocol
@@ -372,7 +524,7 @@ class AmirlanVoicebot:
     # =========================================================================
     # MASTER PIPELINE (Stages 1 -> 6 Orchestration)
     # =========================================================================
-    def run_full_pipeline(self, audio_bytes: Optional[bytes] = None, text_query: Optional[str] = None) -> Dict[str, Any]:
+    def run_full_pipeline(self, audio_bytes: Optional[bytes] = None, text_query: Optional[str] = None, voice: str = "Ankhmaa") -> Dict[str, Any]:
         """Runs the complete 6-stage end-to-end voicebot workflow."""
         start_time = time.time()
         stage_logs = []
@@ -456,20 +608,50 @@ class AmirlanVoicebot:
         audio_filename = None
         audio_error = None
         try:
-            audio_filename = self.synthesize_speech_narakeet(response_text, voice="Ganbaatar")
+            audio_filename = self.synthesize_speech_narakeet(response_text, voice=voice)
         except Exception as e:
             audio_error = str(e)
 
         stage_logs.append({
             "stage": 5,
             "name": "Response Generation",
-            "title": "Хариу боловсруулах & TTS (Narakeet Ganbaatar)",
+            "title": f"Хариу боловсруулах & TTS (Narakeet {voice})",
             "status": "completed" if audio_filename else "warning",
             "duration": round(time.time() - stage5_start, 2),
             "details": f"Дууны файл: {audio_filename if audio_filename else audio_error}"
         })
 
         total_time = round(time.time() - start_time, 2)
+
+        # Telemetry record for Developer Mode metrics history
+        is_cache_hit = False
+        stage5_dur = next((s["duration"] for s in stage_logs if s["stage"] == 5), 0)
+        if stage5_dur < 0.25 and audio_filename and "amirlan_cache_" in audio_filename:
+            is_cache_hit = True
+
+        history_record = {
+            "id": uuid.uuid4().hex[:8],
+            "timestamp": time.strftime("%H:%M:%S"),
+            "query": transcript,
+            "voice": voice,
+            "stages": {
+                "intake": stage_logs[0]["duration"] if len(stage_logs) > 0 else 0,
+                "intent": stage_logs[1]["duration"] if len(stage_logs) > 1 else 0,
+                "retrieval": stage_logs[2]["duration"] if len(stage_logs) > 2 else 0,
+                "decision": stage_logs[3]["duration"] if len(stage_logs) > 3 else 0,
+                "tts": stage5_dur,
+            },
+            "total_duration": total_time,
+            "is_cached": is_cache_hit,
+            "is_escalated": is_escalation,
+            "category": intent.get("category", "general_inquiry"),
+            "audio_file": audio_filename
+        }
+        self.request_history.insert(0, history_record)
+        if len(self.request_history) > 60:
+            self.request_history.pop()
+
+        self.log_event("Pipeline", f"Pipeline finished in {total_time}s (TTS: {stage5_dur}s, Cache: {is_cache_hit})")
 
         return {
             "transcript": transcript,
@@ -483,3 +665,170 @@ class AmirlanVoicebot:
             "stage_logs": stage_logs,
             "execution_time_sec": total_time
         }
+
+    def get_metrics_summary(self) -> Dict[str, Any]:
+        """Calculates aggregated performance and SLA metrics across requests."""
+        if not self.request_history:
+            return {
+                "total_requests": 0,
+                "avg_total_duration": 0.0,
+                "avg_tts_duration": 0.0,
+                "cache_hit_rate": 0.0,
+                "escalation_rate": 0.0
+            }
+        n = len(self.request_history)
+        avg_tot = sum(r["total_duration"] for r in self.request_history) / n
+        avg_tts = sum(r["stages"]["tts"] for r in self.request_history) / n
+        cache_hits = sum(1 for r in self.request_history if r.get("is_cached"))
+        escalations = sum(1 for r in self.request_history if r.get("is_escalated"))
+        return {
+            "total_requests": n,
+            "avg_total_duration": round(avg_tot, 2),
+            "avg_tts_duration": round(avg_tts, 2),
+            "cache_hit_rate": round((cache_hits / n) * 100, 1),
+            "escalation_rate": round((escalations / n) * 100, 1)
+        }
+
+    def run_evaluation_suite(self) -> Dict[str, Any]:
+        """
+        Runs comprehensive evaluation against standard test cases:
+        1. Grounding Accuracy (Khan Bank official data adherence)
+        2. Escalation Safety Compliance
+        3. Latency Budget Score
+        """
+        eval_cases = [
+            {
+                "id": "TC-01",
+                "name": "Хадгаламжийн хүү (Deposit Rate)",
+                "query": "Хадгаламжийн хүү хэд вэ?",
+                "expected_category": "account_service",
+                "should_escalate": False,
+                "keywords": ["хадгаламж", "хүү", "1800-1917"]
+            },
+            {
+                "id": "TC-02",
+                "name": "Ипотекийн зээл (Mortgage Loan)",
+                "query": "Ипотекийн 6 хувийн зээлийн урьдчилгаа хэд вэ?",
+                "expected_category": "loan_inquiry",
+                "should_escalate": False,
+                "keywords": ["30%", "урьдчилгаа", "хүү", "зээл"]
+            },
+            {
+                "id": "TC-03",
+                "name": "Оператортой холбох (Operator Escalation)",
+                "query": "Намайг яаралтай амьд ажилтантай холбоод өг!",
+                "expected_category": "human_escalation",
+                "should_escalate": True,
+                "keywords": ["1800-1917", "мэргэжилтэн", "шилжүүл"]
+            },
+            {
+                "id": "TC-04",
+                "name": "Цалингийн зээл (Salary Loan)",
+                "query": "Цалингийн зээлийн хүү, хугацаа хэд вэ?",
+                "expected_category": "loan_inquiry",
+                "should_escalate": False,
+                "keywords": ["шимтгэлгүй", "сар", "хүү", "1.4%"]
+            }
+        ]
+
+        results = []
+        passed_count = 0
+        total_time = 0.0
+
+        for tc in eval_cases:
+            t0 = time.time()
+            try:
+                res = self.run_full_pipeline(text_query=tc["query"], voice="Ankhmaa")
+                dur = round(time.time() - t0, 2)
+                total_time += dur
+
+                esc_ok = (res["is_escalated"] == tc["should_escalate"])
+                resp_text = res["response_text"] or ""
+                kw_matches = sum(1 for kw in tc["keywords"] if kw.lower() in resp_text.lower())
+                grounding_score = min(100, int((kw_matches / max(1, len(tc["keywords"]))) * 100))
+
+                passed = esc_ok and (grounding_score >= 50)
+                if passed:
+                    passed_count += 1
+
+                results.append({
+                    "id": tc["id"],
+                    "name": tc["name"],
+                    "query": tc["query"],
+                    "duration": dur,
+                    "passed": passed,
+                    "grounding_score": grounding_score,
+                    "escalation_matched": esc_ok,
+                    "response_snippet": resp_text[:120] + "..."
+                })
+            except Exception as e:
+                results.append({
+                    "id": tc["id"],
+                    "name": tc["name"],
+                    "query": tc["query"],
+                    "duration": 0,
+                    "passed": False,
+                    "error": str(e)
+                })
+
+        overall_score = int((passed_count / len(eval_cases)) * 100)
+        avg_latency = round(total_time / max(1, len(eval_cases)), 2)
+
+        summary = {
+            "tested_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "total_cases": len(eval_cases),
+            "passed_cases": passed_count,
+            "overall_score": overall_score,
+            "avg_latency_sec": avg_latency,
+            "cases": results
+        }
+        self.latest_evaluations = summary
+        self.log_event("Evaluation", f"Benchmark suite executed: Score {overall_score}%, Avg Latency {avg_latency}s", level="INFO")
+        return summary
+
+
+def text_to_speech_narakeet_optimized(
+    text: str, 
+    output_file: str = "khanbank_response.m4a", 
+    voice: str = "Ganbaatar"
+) -> str:
+    """
+    Optimized Narakeet TTS function using persistent session and chunked streaming.
+    """
+    if not text or not text.strip():
+        raise ValueError("Текст хоосон байна.")
+
+    api_key = os.getenv("NARAKEET_API_KEY")
+    if not api_key:
+        raise ValueError("NARAKEET_API_KEY тохируулагдаагүй байна.")
+
+    url = f"https://api.narakeet.com/text-to-speech/m4a?voice={voice}"
+
+    headers = {
+        'Accept': 'application/octet-stream',
+        'Content-Type': 'text/plain; charset=utf-8',
+        'x-api-key': api_key,
+    }
+
+    try:
+        # Use stream=True for faster initial response handling and reuse session
+        response = _narakeet_session.post(
+            url, 
+            headers=headers, 
+            data=text.encode('utf-8'), 
+            stream=True,
+            timeout=45
+        )
+        response.raise_for_status()
+
+        # Write audio data in chunks to disk
+        with open(output_file, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+                    
+        return output_file
+
+    except requests.exceptions.HTTPError as e:
+        error_details = e.response.text if e.response else "No details"
+        raise Exception(f"HTTP error {e.response.status_code}. Details: {error_details}") from None

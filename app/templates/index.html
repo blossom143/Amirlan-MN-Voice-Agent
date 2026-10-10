@@ -1,19 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Amirlan • Conversational Voice AI Agent</title>
-    <meta name="description" content="Next-generation autonomous speech-to-speech AI voice agent powered by Google Cloud Chirp 3, Gemini 2.5 Flash, and Narakeet Neural TTS.">
+    <meta name="description"
+        content="Next-generation autonomous speech-to-speech AI voice agent powered by Google Cloud Chirp 3, Gemini 2.5 Flash, and Narakeet Neural TTS.">
 
     <!-- Google Fonts: Space Grotesk, Plus Jakarta Sans, Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
 
     <!-- Sleek Luxury CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
+
 <body>
     <!-- Subtle Ambient Backdrop -->
     <div class="ambient-glow ambient-glow-1"></div>
@@ -28,15 +33,17 @@
             <div class="navbar-left">
                 <div class="brand-monogram">
                     <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect width="40" height="40" rx="10" fill="#13181F"/>
-                        <rect x="0.5" y="0.5" width="39" height="39" rx="9.5" stroke="rgba(255,255,255,0.12)"/>
+                        <rect width="40" height="40" rx="10" fill="#13181F" />
+                        <rect x="0.5" y="0.5" width="39" height="39" rx="9.5" stroke="rgba(255,255,255,0.12)" />
                         <!-- Neural Soundwave / Monogram -->
-                        <path d="M12 20V20.5M16 14V26M20 10V30M24 16V24M28 18V22" stroke="url(#accentGrad)" stroke-width="2.5" stroke-linecap="round"/>
+                        <path d="M12 20V20.5M16 14V26M20 10V30M24 16V24M28 18V22" stroke="url(#accentGrad)"
+                            stroke-width="2.5" stroke-linecap="round" />
                         <defs>
-                            <linearGradient id="accentGrad" x1="12" y1="10" x2="28" y2="30" gradientUnits="userSpaceOnUse">
-                                <stop stop-color="#ff414e"/>
-                                <stop offset="0.5" stop-color="#ff8928"/>
-                                <stop offset="1" stop-color="#ff414e"/>
+                            <linearGradient id="accentGrad" x1="12" y1="10" x2="28" y2="30"
+                                gradientUnits="userSpaceOnUse">
+                                <stop stop-color="#ff414e" />
+                                <stop offset="0.5" stop-color="#ff8928" />
+                                <stop offset="1" stop-color="#ff414e" />
                             </linearGradient>
                         </defs>
                     </svg>
@@ -51,6 +58,43 @@
             </div>
 
             <div class="navbar-right">
+                <!-- Dropdown Selection for Voices (Ankhmaa default) -->
+                <div class="voice-picker-box">
+                    <svg class="nav-control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                        <line x1="12" y1="19" x2="12" y2="23" />
+                        <line x1="8" y1="23" x2="16" y2="23" />
+                    </svg>
+                    <label for="voiceSelect" class="voice-picker-label">Voice:</label>
+                    <select id="voiceSelect" class="sleek-select">
+                        <option value="Ankhmaa" selected>Ankhmaa (Female)</option>
+                        <option value="Ganbaatar">Ganbaatar (Male)</option>
+                    </select>
+                </div>
+
+                <!-- Clickable Tab for Agent Reasoning & Grounding -->
+                <button class="nav-tab-btn" id="intelNavTabBtn" title="Agent Reasoning & Source Grounding">
+                    <svg class="nav-control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                    </svg>
+                    <span>Reasoning</span>
+                    <span class="nav-tab-dot" id="intelBadge" style="display: none;"></span>
+                </button>
+
+                <!-- Clickable Tab for Developer Mode -->
+                <button class="nav-tab-btn nav-tab-dev" id="devNavTabBtn" title="Developer Console & Monitoring">
+                    <svg class="nav-control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <path d="M16 18l6-6-6-6" />
+                        <path d="M8 6l-6 6 6 6" />
+                    </svg>
+                    <span>Dev Mode</span>
+                    <span class="nav-tab-dot dot-dev"></span>
+                </button>
+
                 <div class="status-indicator">
                     <span class="status-light"></span>
                     <span class="status-text">Chirp 3 • Gemini 2.5 • Narakeet</span>
@@ -63,16 +107,310 @@
         </header>
 
         <!-- ========================================================= -->
+        <!-- AGENT REASONING DRAWER (Linked to Navbar Tab)              -->
+        <!-- ========================================================= -->
+        <div class="sleek-card intel-dropdown-card" id="intelCard" style="display: none;">
+            <div class="intel-header">
+                <div class="intel-header-left">
+                    <svg class="intel-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                    </svg>
+                    <span class="intel-heading">Agent Reasoning & Source Grounding</span>
+                </div>
+                <button class="intel-close-btn" id="intelCloseBtn" title="Close Panel">✕</button>
+            </div>
+            <div class="intel-body" id="intelBody">
+                <div class="intel-details-grid">
+                    <div class="intel-item">
+                        <span class="intel-item-label">DETECTED INTENT</span>
+                        <span class="intel-item-value" id="intelIntentVal">-</span>
+                    </div>
+                    <div class="intel-item">
+                        <span class="intel-item-label">DECISION OUTCOME</span>
+                        <span class="intel-item-value" id="intelDecisionVal">-</span>
+                    </div>
+                    <div class="intel-item full-width">
+                        <span class="intel-item-label">RETRIEVED KNOWLEDGE SNIPPET</span>
+                        <div class="intel-snippet-box" id="intelSnippetVal">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- DEVELOPER MODE CONSOLE & MONITORING DRAWER                 -->
+        <!-- ========================================================= -->
+        <div class="sleek-card dev-dropdown-card" id="devCard" style="display: none;">
+            <div class="dev-header">
+                <div class="dev-header-left">
+                    <div class="dev-badge-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M16 18l6-6-6-6" />
+                            <path d="M8 6l-6 6 6 6" />
+                        </svg>
+                    </div>
+                    <div>
+                        <span class="dev-heading">Developer Console & Telemetry Hub</span>
+                        <p class="dev-subheading">Caching Control • Prompt Tuning • Stage Latencies • Monitoring & Evaluation</p>
+                    </div>
+                </div>
+                <div class="dev-header-right">
+                    <button class="subtle-btn btn-sm" id="devRefreshBtn" title="Refresh Telemetry">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon-xs">
+                            <polyline points="23 4 23 10 17 10" />
+                            <polyline points="1 20 1 14 7 14" />
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                        </svg>
+                        <span>Refresh</span>
+                    </button>
+                    <button class="intel-close-btn" id="devCloseBtn" title="Close Panel">✕</button>
+                </div>
+            </div>
+
+            <!-- Developer Navigation Subtabs -->
+            <div class="dev-subnav-tabs">
+                <button class="dev-tab-btn active" data-devtab="cache" id="devTabBtnCache">
+                    <span>1. TTS & Cache Engine</span>
+                </button>
+                <button class="dev-tab-btn" data-devtab="prompt" id="devTabBtnPrompt">
+                    <span>2. Prompt Tuning</span>
+                </button>
+                <button class="dev-tab-btn" data-devtab="metrics" id="devTabBtnMetrics">
+                    <span>3. Request Duration & Metrics</span>
+                </button>
+                <button class="dev-tab-btn" data-devtab="monitoring" id="devTabBtnMonitoring">
+                    <span>4. Monitoring & Evaluation</span>
+                </button>
+            </div>
+
+            <div class="dev-body">
+                <!-- TAB 1: TTS & Cache Engine -->
+                <div class="dev-tab-pane active" id="paneDevCache">
+                    <div class="dev-grid-2col">
+                        <div class="dev-box">
+                            <h3 class="dev-box-title">Audio Caching (Memoization Control)</h3>
+                            <p class="dev-box-desc">When enabled, synthesized voice responses are hashed and cached on disk. Subsequent requests with identical responses return audio in 0.00s.</p>
+                            
+                            <div class="dev-toggle-row">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="cacheToggle" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                                <span class="toggle-label" id="cacheToggleLabel">Audio Caching: <strong>ENABLED</strong></span>
+                            </div>
+
+                            <div class="cache-stats-grid">
+                                <div class="cache-stat-item">
+                                    <span class="cache-stat-num" id="cacheFileCount">0</span>
+                                    <span class="cache-stat-name">Cached Files</span>
+                                </div>
+                                <div class="cache-stat-item">
+                                    <span class="cache-stat-num" id="cacheDiskSize">0.0 KB</span>
+                                    <span class="cache-stat-name">Disk Usage</span>
+                                </div>
+                                <div class="cache-stat-item">
+                                    <span class="cache-stat-num" id="cacheHitRateBadge">0%</span>
+                                    <span class="cache-stat-name">Cache Hit Rate</span>
+                                </div>
+                            </div>
+
+                            <div class="dev-btn-row">
+                                <button id="clearCacheBtn" class="dev-danger-btn">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon-xs">
+                                        <polyline points="3 6 5 6 21 6" />
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                    </svg>
+                                    <span>Purge All TTS Cache Files</span>
+                                </button>
+                                <span class="dev-status-note" id="cacheStatusNote"></span>
+                            </div>
+                        </div>
+
+                        <!-- Narakeet Streaming Analysis Card -->
+                        <div class="dev-box">
+                            <h3 class="dev-box-title">Narakeet TTS Streaming Analysis</h3>
+                            <p class="dev-box-desc">Empirical telemetry analysis on Narakeet HTTP streaming behavior:</p>
+                            <div class="narakeet-analysis-card">
+                                <div class="analysis-row">
+                                    <span class="analysis-key">API Protocol:</span>
+                                    <span class="analysis-val font-mono">Synchronous HTTP POST with Content-Length</span>
+                                </div>
+                                <div class="analysis-row">
+                                    <span class="analysis-key">Backend Synthesis Time:</span>
+                                    <span class="analysis-val font-mono text-orange">~2.62s (TTFB before 1st byte)</span>
+                                </div>
+                                <div class="analysis-row">
+                                    <span class="analysis-key">Network Transfer Time:</span>
+                                    <span class="analysis-val font-mono text-green">~0.035s (21 chunks / 83 KB in 35ms)</span>
+                                </div>
+                                <div class="analysis-row">
+                                    <span class="analysis-key">Streaming Verification:</span>
+                                    <span class="analysis-badge badge-warning">Server Buffers Full Audio</span>
+                                </div>
+                                <div class="analysis-explanation">
+                                    <strong>Why speed feels unchanged:</strong> Narakeet generates the complete audio file on its backend before sending HTTP 200 headers with fixed <code>Content-Length</code>. Once generated, all 83 KB downloads across the network in just 35ms. Because Narakeet does not emit incomplete audio tokens as they are generated, client-side HTTP streaming (<code>stream=True</code>) cannot bypass the 2.6s server-side synthesis delay.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 2: Prompt Tuning -->
+                <div class="dev-tab-pane" id="paneDevPrompt" style="display: none;">
+                    <div class="dev-box full-width">
+                        <div class="dev-box-header">
+                            <div>
+                                <h3 class="dev-box-title">LLM Agent System Prompt Tuning</h3>
+                                <p class="dev-box-desc">Tune the persona, behavioral instructions, tone, and guardrails of Amirlan in real-time. Changes take effect on subsequent inquiries.</p>
+                            </div>
+                            <div class="dev-prompt-actions">
+                                <button id="resetPromptBtn" class="subtle-btn">Reset to Default</button>
+                                <button id="savePromptBtn" class="dev-primary-btn">Save Active Prompt</button>
+                            </div>
+                        </div>
+                        <div class="prompt-editor-wrapper">
+                            <textarea id="devPromptTextarea" class="dev-prompt-textarea" rows="12" spellcheck="false"></textarea>
+                        </div>
+                        <div class="prompt-vars-legend">
+                            <span class="legend-title">Interpolated Runtime Variables:</span>
+                            <code>{user_query}</code>
+                            <code>{search_results}</code>
+                            <code>{verified_context}</code>
+                            <span class="save-toast-note" id="promptSaveNote"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 3: Request Duration History & Metrics -->
+                <div class="dev-tab-pane" id="paneDevMetrics" style="display: none;">
+                    <!-- Metrics Summary Cards -->
+                    <div class="dev-metrics-summary-grid">
+                        <div class="dev-metric-card">
+                            <span class="dev-metric-label">TOTAL REQUESTS</span>
+                            <span class="dev-metric-val" id="metricTotalReqs">0</span>
+                        </div>
+                        <div class="dev-metric-card">
+                            <span class="dev-metric-label">AVG WORKFLOW TIME</span>
+                            <span class="dev-metric-val" id="metricAvgTotal">0.00s</span>
+                        </div>
+                        <div class="dev-metric-card">
+                            <span class="dev-metric-label">AVG TTS DURATION</span>
+                            <span class="dev-metric-val" id="metricAvgTTS">0.00s</span>
+                        </div>
+                        <div class="dev-metric-card">
+                            <span class="dev-metric-label">CACHE HIT RATIO</span>
+                            <span class="dev-metric-val" id="metricCacheHit">0%</span>
+                        </div>
+                        <div class="dev-metric-card">
+                            <span class="dev-metric-label">ESCALATION RATE</span>
+                            <span class="dev-metric-val" id="metricEscRate">0%</span>
+                        </div>
+                    </div>
+
+                    <!-- Historical Request Duration Table -->
+                    <div class="dev-table-container">
+                        <table class="dev-table" id="devHistoryTable">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>User Query</th>
+                                    <th>Stage 1 (STT)</th>
+                                    <th>Stage 2 (Intent)</th>
+                                    <th>Stage 3 (Search)</th>
+                                    <th>Stage 4 (Decision)</th>
+                                    <th>Stage 5 (TTS)</th>
+                                    <th>Total Turn</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="devHistoryTableBody">
+                                <tr>
+                                    <td colspan="9" class="text-center text-muted">No requests recorded yet. Make a voice or text query to view live latency breakdowns.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- TAB 4: Monitoring & Evaluation -->
+                <div class="dev-tab-pane" id="paneDevMonitoring" style="display: none;">
+                    <div class="dev-grid-2col">
+                        <!-- Live System Logs -->
+                        <div class="dev-box">
+                            <div class="dev-box-header">
+                                <div>
+                                    <h3 class="dev-box-title">System Telemetry & Key Logs</h3>
+                                    <p class="dev-box-desc">Real-time structured event logs with severity levels.</p>
+                                </div>
+                                <button id="clearLogsBtn" class="subtle-btn btn-xs">Clear View</button>
+                            </div>
+                            <div class="terminal-log-viewer" id="devLogTerminal">
+                                <div class="log-entry log-info">
+                                    <span class="log-ts">[Ready]</span>
+                                    <span class="log-stage">[System]</span>
+                                    <span class="log-msg">Developer monitoring online. Listening for pipeline events...</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Automated Evaluation Framework -->
+                        <div class="dev-box">
+                            <div class="dev-box-header">
+                                <div>
+                                    <h3 class="dev-box-title">Automated Evaluation Framework</h3>
+                                    <p class="dev-box-desc">Benchmarks Grounding Accuracy, Escalation Safety, and Latency against standard test cases.</p>
+                                </div>
+                                <button id="runEvaluationBtn" class="dev-eval-btn">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon-xs">
+                                        <polygon points="5 3 19 12 5 21 5 3" />
+                                    </svg>
+                                    <span id="evalBtnText">Run Evaluation Suite</span>
+                                </button>
+                            </div>
+
+                            <!-- Evaluation Scorecard -->
+                            <div class="eval-scorecard" id="evalScorecard" style="display: none;">
+                                <div class="scorecard-header">
+                                    <div class="scorecard-stat">
+                                        <span class="scorecard-num text-green" id="evalScoreOverall">0%</span>
+                                        <span class="scorecard-lbl">Overall Accuracy</span>
+                                    </div>
+                                    <div class="scorecard-stat">
+                                        <span class="scorecard-num" id="evalScorePassed">0 / 4</span>
+                                        <span class="scorecard-lbl">Passed Cases</span>
+                                    </div>
+                                    <div class="scorecard-stat">
+                                        <span class="scorecard-num text-orange" id="evalScoreLatency">0.0s</span>
+                                        <span class="scorecard-lbl">Avg Latency</span>
+                                    </div>
+                                </div>
+                                <div class="eval-cases-list" id="evalCasesList"></div>
+                            </div>
+
+                            <div class="eval-placeholder" id="evalPlaceholder">
+                                <p>Click <strong>Run Evaluation Suite</strong> to benchmark 4 core test cases (Deposit rate, Mortgage loan, Operator escalation, Salary loan).</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================================= -->
         <!-- MAIN WORKSPACE: Dual Column Layout                        -->
         <!-- ========================================================= -->
         <main class="workspace-grid">
-            <!-- LEFT PANEL: 6-Stage Stepper Workflow & Intelligence Drawer -->
+            <!-- LEFT PANEL: 6-Stage Stepper Workflow -->
             <section class="panel-left">
                 <!-- 6-STAGE WORKFLOW PIPELINE WITH LIVE TIMERS -->
                 <div class="sleek-card workflow-card">
                     <div class="card-header-row">
                         <div class="header-title-box">
-                            <span class="header-icon">✦</span>
+                            <svg class="header-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <circle cx="12" cy="12" r="3" />
+                                <path d="M12 2v4m0 12v4M2 12h4m12 0h4" />
+                            </svg>
                             <h2 class="section-title">6-Stage Architecture Workflow</h2>
                         </div>
                         <div class="live-clock-badge">
@@ -96,7 +434,8 @@
                                         <span class="step-live-timer" id="timerStep1">0.0s</span>
                                     </div>
                                 </div>
-                                <p class="step-description">Captures audio stream and transcribes speech into text via Google Cloud Chirp 3</p>
+                                <p class="step-description">Captures audio stream and transcribes speech into text via
+                                    Google Cloud Chirp 3</p>
                                 <div class="step-detail-snippet" id="step1Meta">Idle</div>
                             </div>
                         </div>
@@ -115,7 +454,8 @@
                                         <span class="step-live-timer" id="timerStep2">0.0s</span>
                                     </div>
                                 </div>
-                                <p class="step-description">Classifies domain category, service intent, and escalation urgency</p>
+                                <p class="step-description">Classifies domain category, service intent, and escalation
+                                    urgency</p>
                                 <div class="step-detail-snippet" id="step2Meta">Idle</div>
                             </div>
                         </div>
@@ -134,7 +474,8 @@
                                         <span class="step-live-timer" id="timerStep3">0.0s</span>
                                     </div>
                                 </div>
-                                <p class="step-description">Retrieves verified knowledge base and official data sources</p>
+                                <p class="step-description">Retrieves verified knowledge base and official data sources
+                                </p>
                                 <div class="step-detail-snippet" id="step3Meta">Idle</div>
                             </div>
                         </div>
@@ -153,7 +494,8 @@
                                         <span class="step-live-timer" id="timerStep4">0.0s</span>
                                     </div>
                                 </div>
-                                <p class="step-description">Evaluates response completeness and verifies if human transfer is required</p>
+                                <p class="step-description">Evaluates response completeness and verifies if human
+                                    transfer is required</p>
                                 <div class="step-detail-snippet" id="step4Meta">Idle</div>
                             </div>
                         </div>
@@ -172,7 +514,8 @@
                                         <span class="step-live-timer" id="timerStep5">0.0s</span>
                                     </div>
                                 </div>
-                                <p class="step-description">Formulates polite response and synthesizes audio with Ganbaatar voice</p>
+                                <p class="step-description">Formulates polite response and synthesizes audio via neural
+                                    Narakeet voice</p>
                                 <div class="step-detail-snippet" id="step5Meta">Idle</div>
                             </div>
                         </div>
@@ -190,35 +533,9 @@
                                         <span class="step-live-timer" id="timerStep6">0.0s</span>
                                     </div>
                                 </div>
-                                <p class="step-description">Routes restricted inquiries or explicit requests to live human operators</p>
+                                <p class="step-description">Routes restricted inquiries or explicit requests to live
+                                    human operators</p>
                                 <div class="step-detail-snippet" id="step6Meta">Standby</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Intelligence Reasoning Drawer -->
-                <div class="sleek-card intel-card" id="intelCard" style="display: none;">
-                    <div class="intel-header" id="intelToggleBtn">
-                        <div class="intel-header-left">
-                            <span class="header-icon">⚡</span>
-                            <span class="intel-heading">Agent Reasoning & Source Grounding</span>
-                        </div>
-                        <span class="intel-toggle-arrow">▼</span>
-                    </div>
-                    <div class="intel-body" id="intelBody">
-                        <div class="intel-details-grid">
-                            <div class="intel-item">
-                                <span class="intel-item-label">DETECTED INTENT</span>
-                                <span class="intel-item-value" id="intelIntentVal">-</span>
-                            </div>
-                            <div class="intel-item">
-                                <span class="intel-item-label">DECISION OUTCOME</span>
-                                <span class="intel-item-value" id="intelDecisionVal">-</span>
-                            </div>
-                            <div class="intel-item full-width">
-                                <span class="intel-item-label">RETRIEVED KNOWLEDGE SNIPPET</span>
-                                <div class="intel-snippet-box" id="intelSnippetVal">-</div>
                             </div>
                         </div>
                     </div>
@@ -231,8 +548,9 @@
                 <div class="sleek-card escalation-banner" id="escalationCard" style="display: none;">
                     <div class="esc-header">
                         <div class="esc-title-box">
-                            <svg class="esc-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                            <svg class="esc-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                             </svg>
                             <span>HUMAN ESCALATION PROTOCOL ACTIVATED</span>
                         </div>
@@ -240,7 +558,8 @@
                     </div>
                     <div class="esc-body">
                         <p class="esc-description">
-                            Your inquiry has been assigned to customer support specialists. Connect directly via our 24/7 hotline.
+                            Your inquiry has been assigned to customer support specialists. Connect directly via our
+                            24/7 hotline.
                         </p>
                         <div class="esc-telephony-row">
                             <div class="telephony-block">
@@ -253,7 +572,8 @@
                             </div>
                             <a href="tel:18001917" class="esc-direct-call-btn">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+                                    <path
+                                        d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
                                 </svg>
                                 <span>Call Operator</span>
                             </a>
@@ -265,18 +585,22 @@
                 <div class="sleek-card chat-card">
                     <div class="card-header-row">
                         <div class="header-title-box">
-                            <span class="header-icon">💬</span>
+                            <svg class="header-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                            </svg>
                             <h2 class="section-title">Voice Chat</h2>
                         </div>
                         <div class="header-actions">
-                            <button id="clearChatBtn" class="subtle-btn" title="Clear Chat History">Clear</button>
+                            <button id="clearChatBtn" class="subtle-btn" title="Clear Chat History">Clear Chat</button>
                         </div>
                     </div>
 
                     <!-- Suggested Query Chips -->
                     <div class="prompt-chips-tray">
                         <span class="tray-label">Quick Prompts:</span>
-                        <button class="prompt-chip" data-query="Орон сууцны 6 хувийн зээлийн урьдчилгаа болон шаардлага юу вэ?">
+                        <button class="prompt-chip"
+                            data-query="Орон сууцны 6 хувийн зээлийн урьдчилгаа болон шаардлага юу вэ?">
                             <span>Mortgage 6% Loan</span>
                         </button>
                         <button class="prompt-chip" data-query="Signature болон Platinum картын давуу тал юу вэ?">
@@ -285,10 +609,12 @@
                         <button class="prompt-chip" data-query="Цалингийн зээл авахад ямар бичиг баримт хэрэгтэй вэ?">
                             <span>Salary Loan Details</span>
                         </button>
-                        <button class="prompt-chip" data-query="Хадгаламжийн хүү болон нөхцөлийн талаар мэдээлэл өгнө үү.">
+                        <button class="prompt-chip"
+                            data-query="Хадгаламжийн хүү болон нөхцөлийн талаар мэдээлэл өгнө үү.">
                             <span>Savings Interest Rates</span>
                         </button>
-                        <button class="prompt-chip chip-esc" data-query="Би оператор хүнтэй яаралтай ярих хэрэгтэй байна.">
+                        <button class="prompt-chip chip-esc"
+                            data-query="Би оператор хүнтэй яаралтай ярих хэрэгтэй байна.">
                             <span>Connect to Operator</span>
                         </button>
                     </div>
@@ -304,11 +630,18 @@
                                     <span class="msg-timestamp">Just now</span>
                                 </div>
                                 <div class="msg-content">
-                                    Сайн байна уу? Би таны ухаалаг дуу хоолойн туслах <strong>Амирлан</strong> байна. 
-                                    Та орон сууцны зээл, хадгаламж, карт эсвэл бусад үйлчилгээний талаар дуу хоолойгоороо асууна уу.
+                                    Сайн байна уу? Би таны ухаалаг дуу хоолойн туслах <strong>Амирлан</strong> байна.
+                                    Та орон сууцны зээл, хадгаламж, карт эсвэл бусад үйлчилгээний талаар дуу
+                                    хоолойгоороо асууна уу.
                                 </div>
                                 <div class="msg-footer">
-                                    <span class="grounded-tag">✓ Official Knowledge Base</span>
+                                    <span class="grounded-tag">
+                                        <svg class="grounded-check-icon" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2.5">
+                                            <polyline points="20 6 9 17 4 12" />
+                                        </svg>
+                                        <span>Official Knowledge Base</span>
+                                    </span>
                                 </div>
                             </div>
                         </div>
@@ -318,7 +651,8 @@
                     <div class="chat-input-console" id="voiceInputConsole">
                         <div class="console-meta-bar">
                             <div class="mode-tabs">
-                                <button class="mode-btn active" data-mode="browser" id="tabBrowserMic">Browser Mic</button>
+                                <button class="mode-btn active" data-mode="browser" id="tabBrowserMic">Browser
+                                    Mic</button>
                                 <button class="mode-btn" data-mode="desktop" id="tabDesktopMic">Hardware Mic</button>
                                 <button class="mode-btn" data-mode="upload" id="tabUpload">Upload Audio</button>
                                 <button class="mode-btn" data-mode="text" id="tabText">Text Query</button>
@@ -340,11 +674,12 @@
                                 <div class="orb-ring ring-inner"></div>
                                 <div class="orb-ring ring-outer"></div>
                                 <div class="orb-sphere">
-                                    <svg class="mic-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
-                                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                                        <line x1="12" y1="19" x2="12" y2="23"/>
-                                        <line x1="8" y1="23" x2="16" y2="23"/>
+                                    <svg class="mic-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="1.8">
+                                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+                                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                                        <line x1="12" y1="19" x2="12" y2="23" />
+                                        <line x1="8" y1="23" x2="16" y2="23" />
                                     </svg>
                                 </div>
                             </div>
@@ -361,11 +696,12 @@
                             <!-- Primary Push-to-Talk Action Button -->
                             <button id="mainRecordBtn" class="primary-action-btn">
                                 <span class="btn-shine"></span>
-                                <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
-                                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                                    <line x1="12" y1="19" x2="12" y2="23"/>
-                                    <line x1="8" y1="23" x2="16" y2="23"/>
+                                <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+                                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                                    <line x1="12" y1="19" x2="12" y2="23" />
+                                    <line x1="8" y1="23" x2="16" y2="23" />
                                 </svg>
                                 <span id="recordBtnLabel">Start Voice Recording</span>
                             </button>
@@ -373,7 +709,8 @@
 
                         <!-- Text Query Bar (toggled when in text mode) -->
                         <div class="text-query-bar" id="textInputWrapper" style="display: none;">
-                            <input type="text" id="textQueryInput" class="sleek-input" placeholder="Type query in Mongolian or English...">
+                            <input type="text" id="textQueryInput" class="sleek-input"
+                                placeholder="Type query in Mongolian or English...">
                             <button id="sendTextBtn" class="send-btn">Submit</button>
                         </div>
 
@@ -406,4 +743,5 @@
     <!-- Client Script -->
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
+
 </html>

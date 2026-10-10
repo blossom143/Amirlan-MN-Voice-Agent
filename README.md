@@ -76,9 +76,24 @@ When prompted in your terminal or Jupyter Notebook:
 3. Type **`q`** and hit **ENTER** to exit the loop.
 
 #TO DO NEXT
-1. Model visibility/explainability
-2. Voice options (man/woman etc.)
-3. New UI
+1. Data streaming, data layer outside local files?
+2. Improve quick prompt suggestions
+3. 
 4. Guard Rail for prompt injection
-5. Escalation tool function
-6. Memory refresh -> Clean up files when chat ends
+5. Escalation tool function -> live voice recording
+
+
+AI Layer
+•	Speech-to-Text model
+•	LLM Orchestration
+•	Response Generation
+•	Text-to-Speech model
+•	Speech to speech model
+•	STT/TTS & S2S model-уудыг хосуулах эсвэл аль нэгийг сонгож болно.
+Enterprise Integration Layer
+•	Knowledge Base (khanbank.com ашиглах)
+•	Backend APIs
+Monitoring Layer
+•	Logs
+•	Metrics
+•	Evaluation

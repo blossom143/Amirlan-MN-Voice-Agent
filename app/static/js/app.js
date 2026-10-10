@@ -35,13 +35,23 @@ document.addEventListener("DOMContentLoaded", () => {
     const clearChatBtn = document.getElementById("clearChatBtn");
     const escalationCard = document.getElementById("escalationCard");
 
-    // Intelligence Drawer
+    // Intelligence Drawer & Navbar Tab
     const intelCard = document.getElementById("intelCard");
+    const intelNavTabBtn = document.getElementById("intelNavTabBtn");
+    const intelCloseBtn = document.getElementById("intelCloseBtn");
+    const intelBadge = document.getElementById("intelBadge");
     const intelToggleBtn = document.getElementById("intelToggleBtn");
     const intelBody = document.getElementById("intelBody");
     const intelIntentVal = document.getElementById("intelIntentVal");
     const intelDecisionVal = document.getElementById("intelDecisionVal");
     const intelSnippetVal = document.getElementById("intelSnippetVal");
+
+    // Voice Selector (Ankhmaa default, Ganbaatar supported)
+    const voiceSelect = document.getElementById("voiceSelect");
+
+    function getSelectedVoice() {
+        return voiceSelect ? voiceSelect.value : "Ankhmaa";
+    }
 
     // --- State Variables ---
     let currentInputMode = "browser"; // 'browser' | 'desktop' | 'upload' | 'text'
@@ -370,6 +380,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const formData = new FormData();
         const extension = audioBlob.type.includes("mp4") ? "mp4" : "webm";
         formData.append("audio", audioBlob, `speech_input.${extension}`);
+        formData.append("voice", getSelectedVoice());
 
         // Progress simulation for live feedback while waiting for server response
         simulateLiveStepTransitions();
@@ -402,7 +413,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const res = await fetch("/api/voice/record-desktop", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ duration: 5 })
+                body: JSON.stringify({ duration: 5, voice: getSelectedVoice() })
             });
             const data = await res.json();
             handlePipelineResponse(data);
@@ -422,6 +433,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const formData = new FormData();
         formData.append("audio", file, file.name);
+        formData.append("voice", getSelectedVoice());
 
         simulateLiveStepTransitions();
 
@@ -453,7 +465,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const res = await fetch("/api/text/process", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ text: text.trim() })
+                body: JSON.stringify({ text: text.trim(), voice: getSelectedVoice() })
             });
             const data = await res.json();
             handlePipelineResponse(data);
@@ -529,6 +541,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 setOrbState("", "Ready to Listen");
             }
         }
+
+        // 7. Auto-refresh Developer Metrics & History in background
+        if (typeof refreshDevMetrics === "function") {
+            refreshDevMetrics();
+        }
     }
 
     // =========================================================================
@@ -601,7 +618,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="msg-content">${escapeHtml(text)}</div>
                 ${audioPlayerHtml}
                 <div class="msg-footer">
-                    <span class="grounded-tag">✓ Grounded</span>
+                    <span class="grounded-tag">Verified Grounding</span>
                     <span class="intent-chip">${intentLabel}</span>
                 </div>
             </div>
@@ -636,7 +653,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 currentlyPlayingAudio = audioEl;
 
                 audioEl.play().then(() => {
-                    setOrbState("speaking", "Speaking • Ganbaatar voice");
+                    setOrbState("speaking", `Speaking • ${getSelectedVoice()} voice`);
                     iconPlay.style.display = "none";
                     iconPause.style.display = "block";
                 }).catch(err => {
@@ -712,8 +729,8 @@ document.addEventListener("DOMContentLoaded", () => {
         // Unlock user gesture for subsequent background autoplay
         try {
             const silent = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA");
-            silent.play().catch(() => {});
-        } catch (_) {}
+            silent.play().catch(() => { });
+        } catch (_) { }
     }
 
     function escapeHtml(text) {
@@ -723,12 +740,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // =========================================================================
-    // 9. INTELLIGENCE DRAWER & CHIPS
+    // 9. INTELLIGENCE DRAWER (NAVBAR TAB CONTROLLER)
     // =========================================================================
     function updateIntelligenceDrawer(data) {
-        if (!intelCard) return;
-        intelCard.style.display = "block";
-
         if (intelIntentVal && data.intent) {
             intelIntentVal.textContent = `${data.intent.topic} (${data.intent.category})`;
         }
@@ -738,23 +752,434 @@ document.addEventListener("DOMContentLoaded", () => {
         if (intelSnippetVal && data.retrieval) {
             intelSnippetVal.textContent = data.retrieval.search_results || data.retrieval.verified_context;
         }
+        // Pulse badge on navbar tab
+        if (intelBadge) {
+            intelBadge.style.display = "inline-block";
+        }
     }
 
-    if (intelToggleBtn && intelBody) {
-        intelToggleBtn.addEventListener("click", () => {
-            const isClosed = intelBody.style.display === "none";
-            intelBody.style.display = isClosed ? "block" : "none";
-            const arrow = intelToggleBtn.querySelector(".intel-toggle-arrow");
-            if (arrow) arrow.textContent = isClosed ? "▲" : "▼";
+    if (intelNavTabBtn && intelCard) {
+        intelNavTabBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const isClosed = intelCard.style.display === "none";
+            intelCard.style.display = isClosed ? "block" : "none";
+            intelNavTabBtn.classList.toggle("active", isClosed);
+            if (isClosed && devCard) {
+                devCard.style.display = "none";
+                if (devNavTabBtn) devNavTabBtn.classList.remove("active");
+            }
+            if (isClosed && intelBadge) {
+                intelBadge.style.display = "none";
+            }
         });
     }
 
+    if (intelCloseBtn && intelCard) {
+        intelCloseBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            intelCard.style.display = "none";
+            if (intelNavTabBtn) intelNavTabBtn.classList.remove("active");
+        });
+    }
+
+    // =========================================================================
+    // 10. DEVELOPER MODE CONSOLE & TELEMETRY CONTROLLER
+    // =========================================================================
+    const devCard = document.getElementById("devCard");
+    const devNavTabBtn = document.getElementById("devNavTabBtn");
+    const devCloseBtn = document.getElementById("devCloseBtn");
+    const devRefreshBtn = document.getElementById("devRefreshBtn");
+
+    // Subtabs
+    const devTabBtns = document.querySelectorAll(".dev-tab-btn");
+    const devTabPanes = {
+        cache: document.getElementById("paneDevCache"),
+        prompt: document.getElementById("paneDevPrompt"),
+        metrics: document.getElementById("paneDevMetrics"),
+        monitoring: document.getElementById("paneDevMonitoring")
+    };
+
+    // Cache Controls
+    const cacheToggle = document.getElementById("cacheToggle");
+    const cacheToggleLabel = document.getElementById("cacheToggleLabel");
+    const cacheFileCount = document.getElementById("cacheFileCount");
+    const cacheDiskSize = document.getElementById("cacheDiskSize");
+    const cacheHitRateBadge = document.getElementById("cacheHitRateBadge");
+    const clearCacheBtn = document.getElementById("clearCacheBtn");
+    const cacheStatusNote = document.getElementById("cacheStatusNote");
+
+    // Prompt Tuning Controls
+    const devPromptTextarea = document.getElementById("devPromptTextarea");
+    const savePromptBtn = document.getElementById("savePromptBtn");
+    const resetPromptBtn = document.getElementById("resetPromptBtn");
+    const promptSaveNote = document.getElementById("promptSaveNote");
+
+    // Metrics & History Controls
+    const metricTotalReqs = document.getElementById("metricTotalReqs");
+    const metricAvgTotal = document.getElementById("metricAvgTotal");
+    const metricAvgTTS = document.getElementById("metricAvgTTS");
+    const metricCacheHit = document.getElementById("metricCacheHit");
+    const metricEscRate = document.getElementById("metricEscRate");
+    const devHistoryTableBody = document.getElementById("devHistoryTableBody");
+
+    // Monitoring & Evaluation Controls
+    const devLogTerminal = document.getElementById("devLogTerminal");
+    const clearLogsBtn = document.getElementById("clearLogsBtn");
+    const runEvaluationBtn = document.getElementById("runEvaluationBtn");
+    const evalBtnText = document.getElementById("evalBtnText");
+    const evalScorecard = document.getElementById("evalScorecard");
+    const evalPlaceholder = document.getElementById("evalPlaceholder");
+    const evalScoreOverall = document.getElementById("evalScoreOverall");
+    const evalScorePassed = document.getElementById("evalScorePassed");
+    const evalScoreLatency = document.getElementById("evalScoreLatency");
+    const evalCasesList = document.getElementById("evalCasesList");
+
+    // Toggle Dev Card
+    if (devNavTabBtn && devCard) {
+        devNavTabBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const isClosed = devCard.style.display === "none";
+            devCard.style.display = isClosed ? "block" : "none";
+            devNavTabBtn.classList.toggle("active", isClosed);
+            if (isClosed && intelCard) {
+                intelCard.style.display = "none";
+                if (intelNavTabBtn) intelNavTabBtn.classList.remove("active");
+            }
+            if (isClosed) {
+                fetchDevConfig();
+                refreshDevMetrics();
+            }
+        });
+    }
+
+    if (devCloseBtn && devCard) {
+        devCloseBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            devCard.style.display = "none";
+            if (devNavTabBtn) devNavTabBtn.classList.remove("active");
+        });
+    }
+
+    if (devRefreshBtn) {
+        devRefreshBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            fetchDevConfig();
+            refreshDevMetrics();
+        });
+    }
+
+    // Subtab switching
+    devTabBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+            const tabKey = btn.dataset.devtab;
+            devTabBtns.forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+
+            Object.entries(devTabPanes).forEach(([k, pane]) => {
+                if (pane) pane.style.display = (k === tabKey) ? "block" : "none";
+            });
+        });
+    });
+
+    // 1. Fetch & Update Dev Config
+    function fetchDevConfig() {
+        fetch("/api/dev/config")
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success) return;
+                if (cacheToggle) {
+                    cacheToggle.checked = !!data.caching_enabled;
+                    updateCacheToggleLabel(data.caching_enabled);
+                }
+                if (devPromptTextarea && (!devPromptTextarea.value || document.activeElement !== devPromptTextarea)) {
+                    devPromptTextarea.value = data.system_prompt || "";
+                }
+                if (data.cache_stats) {
+                    if (cacheFileCount) cacheFileCount.textContent = data.cache_stats.count;
+                    if (cacheDiskSize) cacheDiskSize.textContent = `${data.cache_stats.size_kb} KB`;
+                }
+            })
+            .catch(e => console.warn("Failed to load dev config:", e));
+    }
+
+    function updateCacheToggleLabel(enabled) {
+        if (!cacheToggleLabel) return;
+        cacheToggleLabel.innerHTML = enabled 
+            ? `Audio Caching: <strong style="color:var(--color-orange)">ENABLED</strong>` 
+            : `Audio Caching: <strong style="color:var(--text-muted)">DISABLED</strong>`;
+    }
+
+    // Toggle Caching
+    if (cacheToggle) {
+        cacheToggle.addEventListener("change", () => {
+            const enabled = cacheToggle.checked;
+            updateCacheToggleLabel(enabled);
+            fetch("/api/dev/config", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ caching_enabled: enabled })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (cacheStatusNote) {
+                        cacheStatusNote.textContent = enabled ? "Cache enabled" : "Cache bypassed";
+                        setTimeout(() => { if (cacheStatusNote) cacheStatusNote.textContent = ""; }, 3000);
+                    }
+                    refreshDevMetrics();
+                })
+                .catch(e => console.warn("Cache toggle error:", e));
+        });
+    }
+
+    // Clear Audio Cache
+    if (clearCacheBtn) {
+        clearCacheBtn.addEventListener("click", () => {
+            clearCacheBtn.disabled = true;
+            fetch("/api/dev/cache/clear", { method: "POST" })
+                .then(r => r.json())
+                .then(data => {
+                    clearCacheBtn.disabled = false;
+                    if (data.success) {
+                        if (cacheFileCount) cacheFileCount.textContent = "0";
+                        if (cacheDiskSize) cacheDiskSize.textContent = "0.0 KB";
+                        if (cacheStatusNote) {
+                            cacheStatusNote.textContent = `Purged ${data.cleared_count} cached audio files!`;
+                            setTimeout(() => { if (cacheStatusNote) cacheStatusNote.textContent = ""; }, 3500);
+                        }
+                    }
+                })
+                .catch(e => {
+                    clearCacheBtn.disabled = false;
+                    console.warn("Clear cache error:", e);
+                });
+        });
+    }
+
+    // Save System Prompt
+    if (savePromptBtn && devPromptTextarea) {
+        savePromptBtn.addEventListener("click", () => {
+            const promptVal = devPromptTextarea.value.trim();
+            if (!promptVal) return;
+            savePromptBtn.disabled = true;
+            fetch("/api/dev/config", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ system_prompt: promptVal })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    savePromptBtn.disabled = false;
+                    if (promptSaveNote) {
+                        promptSaveNote.textContent = "✓ Prompt saved! Active on next inquiry.";
+                        setTimeout(() => { if (promptSaveNote) promptSaveNote.textContent = ""; }, 4000);
+                    }
+                })
+                .catch(e => {
+                    savePromptBtn.disabled = false;
+                    console.warn("Save prompt error:", e);
+                });
+        });
+    }
+
+    // Reset System Prompt
+    if (resetPromptBtn && devPromptTextarea) {
+        resetPromptBtn.addEventListener("click", () => {
+            if (!confirm("Reset the agent prompt back to default Khan Bank template?")) return;
+            fetch("/api/dev/config", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ reset_prompt: true })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.system_prompt) {
+                        devPromptTextarea.value = data.system_prompt;
+                    }
+                    if (promptSaveNote) {
+                        promptSaveNote.textContent = "Reset to default prompt.";
+                        setTimeout(() => { if (promptSaveNote) promptSaveNote.textContent = ""; }, 3000);
+                    }
+                })
+                .catch(e => console.warn("Reset prompt error:", e));
+        });
+    }
+
+    // 2. Refresh Metrics, Duration History, & Logs
+    function refreshDevMetrics() {
+        fetch("/api/dev/metrics")
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success) return;
+
+                // Summary Stats
+                const s = data.summary || {};
+                if (metricTotalReqs) metricTotalReqs.textContent = s.total_requests || 0;
+                if (metricAvgTotal) metricAvgTotal.textContent = `${s.avg_total_duration || 0}s`;
+                if (metricAvgTTS) metricAvgTTS.textContent = `${s.avg_tts_duration || 0}s`;
+                if (metricCacheHit) metricCacheHit.textContent = `${s.cache_hit_rate || 0}%`;
+                if (cacheHitRateBadge) cacheHitRateBadge.textContent = `${s.cache_hit_rate || 0}%`;
+                if (metricEscRate) metricEscRate.textContent = `${s.escalation_rate || 0}%`;
+
+                // History Table
+                if (devHistoryTableBody && Array.isArray(data.history)) {
+                    if (data.history.length === 0) {
+                        devHistoryTableBody.innerHTML = `<tr><td colspan="9" class="text-center text-muted" style="text-align:center;padding:16px;">No requests recorded yet. Make a voice or text query to view live latency breakdowns.</td></tr>`;
+                    } else {
+                        devHistoryTableBody.innerHTML = data.history.map(item => {
+                            const stages = item.stages || {};
+                            const cachedBadge = item.is_cached 
+                                ? `<span style="color:#10b981;font-weight:700;">CACHED</span>` 
+                                : `<span style="color:#6b7280;">LIVE</span>`;
+                            const escBadge = item.is_escalated 
+                                ? `<span style="color:#ff414e;font-weight:700;">ESCALATED</span>` 
+                                : `<span style="color:#3b82f6;">RESOLVED</span>`;
+                            const qSnippet = (item.query || "-").slice(0, 36) + (item.query && item.query.length > 36 ? "..." : "");
+
+                            return `
+                                <tr>
+                                    <td class="font-mono text-muted">${item.timestamp || "-"}</td>
+                                    <td title="${item.query || ''}"><strong>${qSnippet}</strong></td>
+                                    <td class="font-mono">${stages.stt || 0}s</td>
+                                    <td class="font-mono">${stages.intent || 0}s</td>
+                                    <td class="font-mono">${stages.search || 0}s</td>
+                                    <td class="font-mono">${stages.decision || 0}s</td>
+                                    <td class="font-mono" style="color:var(--color-orange);font-weight:700;">${stages.tts || 0}s</td>
+                                    <td class="font-mono" style="font-weight:800;">${item.total_duration || 0}s</td>
+                                    <td>${cachedBadge} / ${escBadge}</td>
+                                </tr>
+                            `;
+                        }).join("");
+                    }
+                }
+
+                // Log Terminal
+                if (devLogTerminal && Array.isArray(data.logs)) {
+                    devLogTerminal.innerHTML = data.logs.map(log => {
+                        let levelClass = "log-info";
+                        if (log.level === "WARN") levelClass = "log-warn";
+                        if (log.level === "ERROR") levelClass = "log-error";
+                        return `
+                            <div class="log-entry ${levelClass}">
+                                <span class="log-ts">[${log.timestamp}]</span>
+                                <span class="log-stage">[${log.stage}]</span>
+                                <span class="log-msg">${log.message}</span>
+                            </div>
+                        `;
+                    }).join("");
+                    devLogTerminal.scrollTop = devLogTerminal.scrollHeight;
+                }
+
+                // Latest Evaluation Scorecard
+                if (data.latest_evaluations) {
+                    renderEvaluationScorecard(data.latest_evaluations);
+                }
+            })
+            .catch(e => console.warn("Failed to refresh metrics:", e));
+    }
+
+    if (clearLogsBtn && devLogTerminal) {
+        clearLogsBtn.addEventListener("click", () => {
+            devLogTerminal.innerHTML = `<div class="log-entry log-info"><span class="log-ts">[Cleared]</span><span class="log-stage">[System]</span><span class="log-msg">Log display cleared.</span></div>`;
+        });
+    }
+
+    // 3. Automated Evaluation Suite Runner
+    if (runEvaluationBtn) {
+        runEvaluationBtn.addEventListener("click", () => {
+            runEvaluationBtn.disabled = true;
+            if (evalBtnText) evalBtnText.textContent = "Benchmarking 4 Test Cases...";
+
+            fetch("/api/dev/evaluate", { method: "POST" })
+                .then(r => r.json())
+                .then(data => {
+                    runEvaluationBtn.disabled = false;
+                    if (evalBtnText) evalBtnText.textContent = "Run Evaluation Suite";
+                    if (data.success && data.evaluation) {
+                        renderEvaluationScorecard(data.evaluation);
+                    }
+                })
+                .catch(e => {
+                    runEvaluationBtn.disabled = false;
+                    if (evalBtnText) evalBtnText.textContent = "Run Evaluation Suite";
+                    console.warn("Evaluation error:", e);
+                });
+        });
+    }
+
+    function renderEvaluationScorecard(ev) {
+        if (!evalScorecard) return;
+        if (evalPlaceholder) evalPlaceholder.style.display = "none";
+        evalScorecard.style.display = "block";
+
+        if (evalScoreOverall) evalScoreOverall.textContent = `${ev.overall_score || 0}%`;
+        if (evalScorePassed) evalScorePassed.textContent = `${ev.passed_cases || 0} / ${ev.total_cases || 0}`;
+        if (evalScoreLatency) evalScoreLatency.textContent = `${ev.avg_latency_sec || 0}s`;
+
+        if (evalCasesList && Array.isArray(ev.cases)) {
+            evalCasesList.innerHTML = ev.cases.map(c => {
+                const badgeClass = c.passed ? "badge-pass" : "badge-fail";
+                const badgeText = c.passed ? "PASS" : "FAIL";
+                return `
+                    <div class="eval-case-card">
+                        <div class="eval-case-left">
+                            <span class="eval-case-title">${c.id}: ${c.name}</span>
+                            <span class="eval-case-query">"${c.query}"</span>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <span class="font-mono text-muted">${c.duration || 0}s</span>
+                            <span class="eval-case-badge ${badgeClass}">${badgeText}</span>
+                        </div>
+                    </div>
+                `;
+            }).join("");
+        }
+    }
+
+    // Dismiss drawer when clicking outside
+    document.addEventListener("click", (e) => {
+        if (intelCard && intelCard.style.display !== "none") {
+            if (!intelCard.contains(e.target) && !intelNavTabBtn.contains(e.target)) {
+                intelCard.style.display = "none";
+                if (intelNavTabBtn) intelNavTabBtn.classList.remove("active");
+            }
+        }
+        if (devCard && devCard.style.display !== "none") {
+            if (!devCard.contains(e.target) && !devNavTabBtn.contains(e.target)) {
+                devCard.style.display = "none";
+                if (devNavTabBtn) devNavTabBtn.classList.remove("active");
+            }
+        }
+    });
+
+    // =========================================================================
+    // 11. CHAT CLEANUP & SESSION DISCONNECT HANDLERS
+    // =========================================================================
     if (clearChatBtn && chatFeed) {
         clearChatBtn.addEventListener("click", () => {
             chatFeed.innerHTML = "";
             appendAssistantMessage("Dialogue history cleared. Ask a new inquiry to begin.");
+            // Clean up input & output audio files on server
+            fetch("/api/chat/clear", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ clear_cache: true })
+            })
+                .then(r => r.json())
+                .then(res => {
+                    console.log("Audio cleaned up:", res);
+                    refreshDevMetrics();
+                })
+                .catch(e => console.warn("Cleanup error:", e));
         });
     }
+
+    // Clean up audio files automatically when user disconnects or navigates away
+    window.addEventListener("beforeunload", () => {
+        navigator.sendBeacon("/api/chat/clear", new Blob([JSON.stringify({ clear_cache: true })], { type: "application/json" }));
+    });
+    window.addEventListener("pagehide", () => {
+        navigator.sendBeacon("/api/chat/clear", new Blob([JSON.stringify({ clear_cache: true })], { type: "application/json" }));
+    });
 
     // Preset Prompt Chips
     document.querySelectorAll(".prompt-chip").forEach(chip => {
@@ -802,5 +1227,9 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    // Initial metrics background sync
+    fetchDevConfig();
+
     console.log("⚡ Amirlan Voice AI Agent UI initialized.");
 });
+

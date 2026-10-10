@@ -14,7 +14,7 @@ from app import app
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5005))
     print("=" * 65)
-    print("  🏦 KHAN BANK AMIRLAN AI VOICEBOT WEB APPLICATION")
-    print(f"  ✨ Luxury Web UI running at: http://127.0.0.1:{port}")
+    print(" AMIRLAN AI VOICEBOT WEB APPLICATION")
+    print(f"  Web UI running at: http://127.0.0.1:{port}")
     print("=" * 65)
     app.run(host="0.0.0.0", port=port, debug=False)
