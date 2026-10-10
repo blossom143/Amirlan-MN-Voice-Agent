@@ -36,7 +36,10 @@ Then open http://localhost:5005
 Or with Docker:
 ```bash
 docker build -t mn-voicebot .
-docker run -d -p 5005:5005 --env-file .env mn-voicebot
+docker run -d --name mn-voicebot -p 5005:5005 \
+  --env-file .env \
+  -v $HOME/.config/gcloud/application_default_credentials.json:/root/.config/gcloud/application_default_credentials.json:ro \
+  mn-voicebot
 ```
 
 ## Connecting your local knowledge base
