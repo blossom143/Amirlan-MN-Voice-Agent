@@ -129,35 +129,127 @@ The voicebot integrates distinct cloud and on-premise APIs across each stage:
 
 ## 🚀 Getting Started & How to Run
 
-### 1. Prerequisites & Environment Setup
-Ensure you have Python installed and your Google Cloud credentials / API keys configured as environment variables:
+### 1. Local Python Setup
+
+#### Prerequisites
+Configure your Google Cloud credentials and API keys in your environment or `.env` file:
 
 ```bash
-export GOOGLE_CLOUD_PROJECT="your-gcp-project-id"
+export GOOGLE_CLOUD_PROJECT="project-1d76ba00-25b9-47dd-8d3"
+export GCP_LOCATION="us-central1"
 export NARAKEET_API_KEY="your-narakeet-api-key"
 ```
 
-### 2. Install Dependencies
-Install the required audio and AI packages:
+#### Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+#### Run Web Application
+```bash
+python run.py
+```
+Access the application at `http://127.0.0.1:5005`.
+
+---
+
+## 🐳 Docker Build & Deployment
+
+The application includes a production-grade [Dockerfile](file:///Users/tsomorlig/Documents/mn-voicebot-agent/Dockerfile) and [.dockerignore](file:///Users/tsomorlig/Documents/mn-voicebot-agent/.dockerignore) engineered specifically for containerized and cloud environments.
+
+### 🌟 Key Container Highlights
+* **Low-Level Linux Audio Stack:** Installs `libportaudio2`, `portaudio19-dev`, `libasound2`, `libasound2-plugins`, `alsa-utils`, `libpulse0`, `libsndfile1`, and `ffmpeg` to prevent runtime wheel compilation failures.
+* **Headless Dummy ALSA Sink:** Configures `/etc/asound.conf` with a null PCM device (`pcm.!default { type plug; slave.pcm "null"; }`), allowing `sounddevice` and PortAudio to initialize without physical sound cards (`/dev/snd`).
+* **Production Gunicorn Server:** Uses Gunicorn with `gthread` workers, 4 threads, and an extended `--timeout 120` to accommodate multi-stage LLM reasoning and real-time TTS synthesis.
+* **Dynamic Port Binding:** Binds automatically to Render's dynamic `${PORT:-5005}`.
+
+---
+
+### Option A: Local Docker Build & Run
+
+#### 1. Build the Docker Image
+```bash
+docker build -t mn-voicebot:latest .
+```
+
+#### 2. Run the Container Locally
+Run the container in detached mode, passing your local `.env` and mounting your Google Cloud Application Default Credentials (ADC):
 
 ```bash
-pip install sounddevice scipy requests google-cloud-speech langchain-google-vertexai langchain-community langgraph --upgrade
+docker run -d \
+  --name mn-voicebot-local \
+  -p 5005:5005 \
+  --env-file .env \
+  -v ~/.config/gcloud/application_default_credentials.json:/tmp/gcp_credentials.json:ro \
+  -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp_credentials.json \
+  mn-voicebot:latest
 ```
 
-### 3. Run the Voicebot Loop
-Execute your Python script containing the integrated orchestration function:
+> **Note:** If you have a dedicated Service Account key file, replace the `-v` mount path with the path to your `service_account.json`.
 
-```python
-from your_script_name import run_khanbank_voicebot
+#### 3. Verify Health & Pipeline
+Check that the container and audio drivers are running:
+```bash
+# Check container status
+curl http://localhost:5005/api/status
 
-# Start the interactive speech-to-speech loop
-run_khanbank_voicebot()
+# Test full 6-stage pipeline (LLM + Grounding + TTS)
+curl -X POST http://localhost:5005/api/text/process \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Хаан банкны хадгаламжийн хүү хэд вэ?", "voice": "Ankhmaa"}'
+```
+Open [http://localhost:5005](http://localhost:5005) in your web browser.
+
+#### 4. Managing the Local Container
+```bash
+# View live logs
+docker logs -f mn-voicebot-local
+
+# Stop the container
+docker stop mn-voicebot-local
+
+# Start the container
+docker start mn-voicebot-local
+
+# Remove the container
+docker rm -f mn-voicebot-local
 ```
 
-When prompted in your terminal or Jupyter Notebook:
-1. Press **ENTER** to speak your question into the microphone.
-2. Listen to the AI agent reason through Khan Bank data and reply naturally in Mongolian via synthesized voice.
-3. Type **`q`** and hit **ENTER** to exit the loop.
+---
+
+### Option B: Cloud Deployment to Render.com
+
+1. **Push your code to GitHub:**
+   ```bash
+   git add Dockerfile .dockerignore requirements.txt app/voicebot.py
+   git commit -m "feat: Add Docker deployment support"
+   git push origin main
+   ```
+
+2. **Create a new Web Service on Render:**
+   - Log into [Render Dashboard](https://dashboard.render.com).
+   - Click **New +** $\rightarrow$ **Web Service**.
+   - Connect your GitHub repository (`mn-voicebot-agent`).
+   - Select **Docker** as the Environment.
+
+3. **Configure Environment Variables:**
+   Under the **Environment** tab, set:
+   | Variable | Value / Description |
+   | :--- | :--- |
+   | `NARAKEET_API_KEY` | Your Narakeet API key |
+   | `GOOGLE_CLOUD_PROJECT` | Your GCP Project ID (e.g. `project-1d76ba00-25b9-47dd-8d3`) |
+   | `GCP_LOCATION` | `us-central1` |
+   | `GOOGLE_CREDENTIALS_JSON` | **Raw JSON string** of your Google Cloud Service Account key |
+
+   *(The container automatically detects `GOOGLE_CREDENTIALS_JSON` and creates `/tmp/gcp_credentials.json` upon startup).*
+
+4. **Health Check Path:**
+   - Set the Health Check Path to `/api/status`.
+
+5. **Deploy:**
+   - Click **Deploy Web Service**. Render builds the image, starts Gunicorn, and serves the app over HTTPS.
+
+---
 
 #TO DO NEXT
 1. Data streaming, data layer outside local files?
