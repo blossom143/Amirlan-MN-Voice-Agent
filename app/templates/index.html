@@ -173,7 +173,7 @@
                     <span>1. TTS & Cache Engine</span>
                 </button>
                 <button class="dev-tab-btn" data-devtab="prompt" id="devTabBtnPrompt">
-                    <span>2. Prompt Tuning</span>
+                    <span>2. Prompt Tuning (Read-Only)</span>
                 </button>
                 <button class="dev-tab-btn" data-devtab="metrics" id="devTabBtnMetrics">
                     <span>3. Request Duration & Metrics</span>
@@ -255,28 +255,27 @@
                     </div>
                 </div>
 
-                <!-- TAB 2: Prompt Tuning -->
+                <!-- TAB 2: Prompt Tuning (Read-Only Guardrail) -->
                 <div class="dev-tab-pane" id="paneDevPrompt" style="display: none;">
                     <div class="dev-box full-width">
                         <div class="dev-box-header">
                             <div>
-                                <h3 class="dev-box-title">LLM Agent System Prompt Tuning</h3>
-                                <p class="dev-box-desc">Tune the persona, behavioral instructions, tone, and guardrails of Amirlan in real-time. Changes take effect on subsequent inquiries.</p>
+                                <h3 class="dev-box-title">System Instruction Prompt (Read-Only Guardrail)</h3>
+                                <p class="dev-box-desc">Amirlan's core persona, anti-hallucination rules, and operational boundaries are immutable and read-only to prevent prompt injection and policy drift.</p>
                             </div>
                             <div class="dev-prompt-actions">
-                                <button id="resetPromptBtn" class="subtle-btn">Reset to Default</button>
-                                <button id="savePromptBtn" class="dev-primary-btn">Save Active Prompt</button>
+                                <span class="read-only-badge">Read-Only Guardrail</span>
                             </div>
                         </div>
                         <div class="prompt-editor-wrapper">
-                            <textarea id="devPromptTextarea" class="dev-prompt-textarea" rows="12" spellcheck="false"></textarea>
+                            <textarea id="devPromptTextarea" class="dev-prompt-textarea" rows="13" spellcheck="false" readonly></textarea>
                         </div>
                         <div class="prompt-vars-legend">
-                            <span class="legend-title">Interpolated Runtime Variables:</span>
-                            <code>{user_query}</code>
-                            <code>{search_results}</code>
-                            <code>{verified_context}</code>
-                            <span class="save-toast-note" id="promptSaveNote"></span>
+                            <span class="legend-title">Active Security Architecture:</span>
+                            <span class="guardrail-chip">Pre-LLM Injection Filter</span>
+                            <span class="guardrail-chip">Role-Separated Message Protocol</span>
+                            <span class="guardrail-chip">PII & Financial Compliance Protection</span>
+                            <span class="guardrail-chip">Strict Source Grounding (khanbank.com)</span>
                         </div>
                     </div>
                 </div>

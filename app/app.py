@@ -165,26 +165,20 @@ def system_status():
 
 @app.route("/api/dev/config", methods=["GET", "POST"])
 def dev_config():
-    """Developer Mode: Get or update system configuration (caching, system prompt)."""
+    """Developer Mode: System configuration (caching toggles, read-only system prompt guardrails)."""
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
         if "caching_enabled" in data:
             voicebot.caching_enabled = bool(data["caching_enabled"])
-            voicebot.log_event("Config", f"Caching toggled to {voicebot.caching_enabled}")
+            voicebot.log_event("Config", f"Audio caching toggled to {voicebot.caching_enabled}")
         if "system_prompt" in data:
-            new_prompt = str(data["system_prompt"]).strip()
-            if new_prompt:
-                voicebot.system_prompt_template = new_prompt
-                voicebot.log_event("Config", "System prompt updated")
-        if data.get("reset_prompt"):
-            voicebot.system_prompt_template = voicebot.DEFAULT_SYSTEM_PROMPT
-            voicebot.log_event("Config", "System prompt reset to default")
+            voicebot.log_event("Security", "Rejected attempt to modify read-only system prompt", level="WARN")
 
     return jsonify({
         "success": True,
         "caching_enabled": voicebot.caching_enabled,
-        "system_prompt": voicebot.system_prompt_template,
-        "default_prompt": voicebot.DEFAULT_SYSTEM_PROMPT,
+        "system_prompt": voicebot.system_prompt,
+        "is_read_only": True,
         "cache_stats": voicebot.get_cache_stats()
     })
 

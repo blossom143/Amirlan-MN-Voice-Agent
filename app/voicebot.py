@@ -34,8 +34,9 @@ load_dotenv(override=True)
 from google.cloud import speech_v2 as speech
 from google.api_core.client_options import ClientOptions
 
-# Vertex AI Gemini
+# Vertex AI Gemini & Structured Messages
 from langchain_google_vertexai import ChatVertexAI
+from langchain_core.messages import SystemMessage, HumanMessage
 
 # Tools
 from langchain_community.tools import DuckDuckGoSearchRun
@@ -50,19 +51,25 @@ except Exception:
     SOUNDDEVICE_AVAILABLE = False
 
 
-DEFAULT_SYSTEM_PROMPT = """Та Хаан Банкны албан ёсны цахим туслах Амирлан байна.
+# ==============================================================================
+# IMMUTABLE SYSTEM PROMPT (No Injectable Parameters)
+# ==============================================================================
+SYSTEM_INSTRUCTION_PROMPT = """Та Хаан Банкны албан ёсны ухаалаг дуут туслах Амирлан байна.
 Хэрэглэгчийн асуултад ДАНДАА МАКСИМУМ ЭЕЛДЭГ, АЛБАН ЁСНЫ, СЭТГЭЛД ХҮРСЭН МОНГОЛ ХЭЛЭЭР хариулна.
 
-Хэрэглэгчийн асуулт: "{user_query}"
-Банкны албан ёсны эх сурвалж:
-{search_results}
-{verified_context}
+[ЭРХ БҮХИЙ ХҮРЭЭ БОЛОН ҮҮРЭГ]
+1. Таны үүрэг нь ЗӨВХӨН Хаан Банкны бүтээгдэхүүн, үйлчилгээ, зээл, хадгаламж, карт, салбарын мэдээлэл өгөх, лавлагаа чиглүүлэхэд оршино.
+2. Санхүүгийн гүйлгээ хийх, данснаас мөнгө шилжүүлэх, эсвэл зээл шууд батлах эрхгүй. Хэрэглэгч гүйлгээ хийх, данс хаах хүсэлт гаргавал Khan Bank аппликейшн эсвэл 1800-1917 лавлахаар үйлчлүүлэхийг зөвлөнө.
+3. Банктай хамааралгүй сэдэв (улс төр, програмчлал, хувийн зөвлөгөө)-ийн асуултад: "Уучлаарай, би зөвхөн Хаан Банкны бүтээгдэхүүн, үйлчилгээний талаар мэдээлэл өгөх боломжтой. Та банктай холбоотой асуултаа асууна уу." гэж эелдгээр чиглүүлнэ.
 
-ДҮРЭМ:
-1. Хариултаа 'Эрхэм харилцагч танд энэ өдрийн мэнд хүргэе' гэж хүндэтгэлтэйгээр эхлүүлнэ.
-2. Мэдээллийг товч, цэгцтэй, сонсоход хялбар 2-3 өгүүлбэрт (нийт 40-50 үгэнд, 300 тэмдэгтээс хэтрүүлэхгүй) багтаана. Дуу хоолойн яриа тул нуршуу биш, товч шууд хариулна.
-3. Нэмэлт дэлгэрэнгүй мэдээллийг 1800-1917 лавлах утас болон khanbank.com хаягаас авахыг эелдгээр зөвлөнө.
-4. Хариулт нь дуу хоолойгоор ярихад сонсголонтой байх ёстой тул элдэв од, хашилт, тусгай тэмдэгт ашиглахгүйгээр цэвэр энгийн монгол текстээр бичнэ үү."""
+[ХАРИУЛТЫН ХАТУУ ДҮРЭМ БОЛОН ГАРАЛТЫН ХЯЗГААРЛАЛТ]
+1. Хариултаа заавал 'Эрхэм харилцагч танд энэ өдрийн мэнд хүргэе' гэж хүндэтгэлтэйгээр эхлүүлнэ.
+2. Зөвхөн өгөгдсөн банкны баталгаат мэдээлэлд тулгуурлан хариулна. Хэрэв тухайн бүтээгдэхүүний тоо баримт (хүү, хураамж) өгөгдөөгүй бол зохиож болохгүй. 1800-1917 лавлах утсаар лавлахыг зөвлөнө.
+3. Мэдээллийг товч, цэгцтэй, сонсоход хялбар 2-3 өгүүлбэрт (нийт 40-50 үгэнд, 300 тэмдэгтээс хэтрүүлэхгүй) багтаана. Дуу хоолойн яриа тул нуршуу биш, товч шууд хариулна.
+4. Нэмэлт дэлгэрэнгүй мэдээллийг 1800-1917 лавлах утас болон khanbank.com хаягаас авахыг эелдгээр зөвлөнө.
+5. Хариулт нь дуу хоолойгоор ярихад сонсголонтой байх ёстой тул элдэв од, хашилт, кодын тусгай тэмдэгт ашиглахгүйгээр цэвэр энгийн монгол текстээр бичнэ үү."""
+
+DEFAULT_SYSTEM_PROMPT = SYSTEM_INSTRUCTION_PROMPT
 
 
 class AmirlanVoicebot:
@@ -100,13 +107,19 @@ class AmirlanVoicebot:
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.input_dir, exist_ok=True)
 
-        # Developer Mode & Runtime State
-        self.DEFAULT_SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT
-        self.system_prompt_template = DEFAULT_SYSTEM_PROMPT
+        # Developer Mode & Runtime State (Read-only prompt)
+        self.DEFAULT_SYSTEM_PROMPT = SYSTEM_INSTRUCTION_PROMPT
+        self.system_prompt = SYSTEM_INSTRUCTION_PROMPT
+        self.system_prompt_template = SYSTEM_INSTRUCTION_PROMPT
         self.caching_enabled = True
         self.request_history = []
         self.system_logs = []
         self.latest_evaluations = None
+
+        # Operational Safeguards State
+        self.consecutive_unclear_count = 0
+        self.session_turn_count = 0
+        self.request_timestamps = []
 
     def log_event(self, stage: str, message: str, level: str = "INFO", meta: Optional[Dict[str, Any]] = None):
         """Records structured telemetry logs for Developer Mode monitoring."""
@@ -189,11 +202,159 @@ class AmirlanVoicebot:
         return transcript.strip()
 
     # =========================================================================
-    # STAGE 2: Intent Understanding (Gemini 2.5 Flash)
+    # GUARDRAIL SUITE: Input, Content, and Compliance Safeguards
+    # =========================================================================
+    def mask_pii_data(self, text: str) -> str:
+        """
+        Masks credit cards, PIN codes, bank account numbers, and Mongolian register numbers
+        before storing in logs or transmission payloads (Stage 1 Intake Safeguard).
+        """
+        if not text:
+            return text
+
+        # 1. Credit Card numbers (13-16 digits): mask all except last 4
+        text = re.sub(
+            r"\b(?:\d[ -]*?){12,15}(\d{4})\b",
+            r"XXXX-XXXX-XXXX-\1",
+            text
+        )
+
+        # 2. PIN Codes: 'пин код 1234' or 'pin 1234'
+        text = re.sub(
+            r"(?i)\b(pin|пин(?:\s*код)?)\s*[:=]?\s*\d{4,6}\b",
+            r"\1: [PIN ХАМГААЛАГДСАН]",
+            text
+        )
+
+        # 3. Mongolian Register Number: 2 Cyrillic letters + 8 digits (e.g. УБ90123456)
+        text = re.sub(
+            r"\b[А-ЯӨҮЁа-яөүё]{2}\d{8}\b",
+            r"[РД ДАЛДАЛСАН]",
+            text
+        )
+
+        # 4. Bank account numbers (10 digits): mask first 6 digits
+        text = re.sub(
+            r"\b\d{6}(\d{4})\b",
+            r"XXXXXX\1",
+            text
+        )
+
+        return text
+
+    def check_prompt_injection(self, query: str) -> Optional[Dict[str, Any]]:
+        """
+        Pre-LLM Guardrail: Detects prompt injection and jailbreak payloads before they reach Gemini.
+        Returns deflection response dict if injection is detected, otherwise None.
+        """
+        injection_patterns = [
+            r"ignore\s+(?:all\s+)?previous\s+instructions",
+            r"forget\s+(?:all\s+)?(?:rules|instructions|prompts)",
+            r"system\s+prompt",
+            r"you\s+are\s+now\s+(?:dan|unrestricted)",
+            r"jailbreak",
+            r"reveal\s+(?:system|internal|prompt|secret)",
+            r"act\s+as\s+an?\s+unrestricted",
+            r"override\s+(?:all\s+)?instructions",
+            r"bypass\s+(?:rules|filters|safety)",
+            r"tell\s+me\s+system\s+secrets",
+            r"өмнөх\s+(?:бүх\s+)?зааварчилгааг?\s+март",
+            r"дүрмээ\s+март",
+            r"систем(?:ийн)?\s+нууц",
+            r"бүх\s+хязгаарлалтыг?\s+цуцал",
+            r"зааврыг?\s+үл\s+тоо",
+            r"хязгаарлалтгүй\s+ажилла"
+        ]
+        q_lower = query.lower()
+        for pat in injection_patterns:
+            if re.search(pat, q_lower):
+                self.log_event("Security", f"Prompt injection intercepted: pattern '{pat}'", level="WARN")
+                return {
+                    "blocked": True,
+                    "reason": "prompt_injection_detected",
+                    "response_text": (
+                        "Эрхэм харилцагч танд энэ өдрийн мэнд хүргэе. "
+                        "Аюулгүй байдлын бодлогын дагуу системийн зааварчилгааг өөрчлөх боломжгүй бөгөөд "
+                        "би зөвхөн Хаан Банкны үйлчилгээний талаар албан ёсны мэдээлэл өгөх боломжтой."
+                    )
+                }
+        return None
+
+    def check_profanity_and_abuse(self, query: str) -> Optional[Dict[str, Any]]:
+        """
+        Pre-LLM Guardrail: Detects profanity, abusive language, or harassment at Stage 1.
+        Triggers polite warning or immediate operator escalation.
+        """
+        abusive_keywords = [
+            "лалар", "лалрын", "новш", "хуцаад", "хуц", "гичий", "алцгар", 
+            "пизда", "банзал", "тэнэг", "мал", "fuck", "bitch", "shit", "asshole"
+        ]
+        q_lower = query.lower()
+        if any(w in q_lower for w in abusive_keywords):
+            self.log_event("Guardrail", "Abusive/profane language intercepted at intake stage", level="WARN")
+            return {
+                "blocked": True,
+                "reason": "profanity_detected",
+                "escalate": True,
+                "response_text": (
+                    "Эрхэм харилцагч танд энэ өдрийн мэнд хүргэе. "
+                    "Манай системд зүй бус үг хэллэг ашиглахыг хориглодог тул таны дуудлагыг "
+                    "харилцагчийн үйлчилгээний төвийн мэргэжилтэнд шууд шилжүүллээ. Та 1800-1917 луу залгана уу."
+                )
+            }
+        return None
+
+    def check_financial_compliance(self, query: str) -> Optional[Dict[str, Any]]:
+        """
+        Compliance Guardrail: Ensures the bot never executes financial transactions,
+        money transfers, account closures, or autonomous loan approvals.
+        """
+        transactional_keywords = [
+            "мөнгө шилжүүл", "шилжүүлэг хий", "данснаас мөнгө", "гүйлгээ хий", "гүйлгээ хийгээд өг",
+            "зээл батал", "зээл батлаад өг", "зээл гаргаад өг", "карт хаа", "карт хаагаад өг",
+            "transfer money", "send money", "approve loan", "close card", "block card"
+        ]
+        q_lower = query.lower()
+        if any(w in q_lower for w in transactional_keywords):
+            self.log_event("Compliance", f"Direct financial execution request blocked: '{query[:40]}'", level="INFO")
+            return {
+                "blocked": True,
+                "reason": "financial_transaction_not_permitted",
+                "escalate": True,
+                "response_text": (
+                    "Эрхэм харилцагч танд энэ өдрийн мэнд хүргэе. "
+                    "Цахим дуут туслах нь санхүүгийн гүйлгээ хийх эсвэл зээл батлах эрхгүй бөгөөд "
+                    "зөвхөн мэдээлэл өгөх зориулалттай. Та шилжүүлэг болон гүйлгээгээ Khan Bank аппликейшнээр хийх "
+                    "эсвэл 1800-1917 лавлах утсаар үйлчлүүлнэ үү."
+                )
+            }
+        return None
+
+    def check_off_topic_query(self, query: str, category: str = "general_inquiry") -> Optional[str]:
+        """
+        Content Guardrail: Steers users back if asking about off-topic subjects (politics, coding, trivia).
+        """
+        off_topic_terms = [
+            "улс төр", "сонгууль", "ерөнхийлөгч", "ерөнхий сайд", "парламент",
+            "програмчлал", "python", "javascript", "код бичиж", "хоол хийх", "цаг агаар",
+            "politics", "write code", "weather forecast"
+        ]
+        q_lower = query.lower()
+        if any(w in q_lower for w in off_topic_terms):
+            self.log_event("Guardrail", f"Off-topic query steered back: '{query[:40]}'", level="INFO")
+            return (
+                "Эрхэм харилцагч танд энэ өдрийн мэнд хүргэе. "
+                "Уучлаарай, би зөвхөн Хаан Банкны бүтээгдэхүүн, үйлчилгээний талаар мэдээлэл өгөх боломжтой. "
+                "Та банктай холбоотой асуултаа асууна уу."
+            )
+        return None
+
+    # =========================================================================
+    # STAGE 2: Intent Understanding (Gemini 2.5 Flash with Confidence Scoring)
     # =========================================================================
     def understand_intent(self, user_query: str) -> Dict[str, Any]:
         """
-        Classifies customer intent into structured categories:
+        Classifies customer intent into structured categories with confidence score:
         - loan_inquiry (Зээлийн мэдээлэл)
         - account_service (Данс, хадгаламж, төлбөр тооцоо)
         - card_service (Карт захиалах, үйлчилгээ)
@@ -211,11 +372,12 @@ class AmirlanVoicebot:
 {{
     "category": "loan_inquiry" | "account_service" | "card_service" | "branch_atm" | "exchange_rate" | "human_escalation" | "general_inquiry",
     "topic": "Товч сэдэв (Монголоор)",
+    "confidence": 0.95 (0.00-аас 1.00 хооронд тоон утга),
     "is_escalation_needed": true/false (Хэрэв хэрэглэгч оператор, амьд хүн хүссэн эсвэл картын пин код, данс хаалгах зэрэг хувийн нууц мэдээлэл шаардсан бол true),
     "search_keywords": "khanbank.com дээрээс хайхад тохиромжтой 2-4 түлхүүр үг"
 }}
 
-ЗӨВХӨН JSON форматаар хариул. Таййлбар бичихгүй."""
+ЗӨВХӨН JSON форматаар хариул. Тайлбар бичихгүй."""
 
         try:
             res = self.llm.invoke(prompt)
@@ -231,9 +393,18 @@ class AmirlanVoicebot:
             intent_data = {
                 "category": "human_escalation" if is_esc else "general_inquiry",
                 "topic": "Ерөнхий хүсэлт",
+                "confidence": 0.65 if not is_esc else 0.95,
                 "is_escalation_needed": is_esc,
                 "search_keywords": user_query
             }
+
+        # Operational Safeguard: Confidence Threshold Trigger (< 0.70)
+        confidence = float(intent_data.get("confidence", 0.90))
+        if confidence < 0.70 and not intent_data.get("is_escalation_needed"):
+            self.log_event("Guardrail", f"Low intent confidence ({confidence:.2f} < 0.70) triggered human escalation", level="WARN")
+            intent_data["is_escalation_needed"] = True
+            intent_data["category"] = "human_escalation"
+
         return intent_data
 
     # =========================================================================
@@ -269,12 +440,12 @@ class AmirlanVoicebot:
         }
 
     # =========================================================================
-    # STAGE 4: Decision Making (Reasoning & Escalation Check)
+    # STAGE 4: Decision Making (Reasoning & Strict Source Grounding)
     # =========================================================================
     def make_decision(self, user_query: str, intent_data: Dict[str, Any], retrieval_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Evaluates whether the user's intent is satisfied by retrieved Khan Bank data
-        or requires escalation to a human banker.
+        or requires escalation to a human banker. Enforces strict anti-hallucination.
         """
         # Explicit or detected escalation
         if intent_data.get("is_escalation_needed") or intent_data.get("category") == "human_escalation":
@@ -284,15 +455,29 @@ class AmirlanVoicebot:
                 "requires_human": True
             }
 
+        # Strict Anti-Hallucination: If search is empty and query is a specific inquiry not in verified context
+        search_res = retrieval_data.get("search_results", "")
+        verified_ctx = retrieval_data.get("verified_context", "")
+        if "Шууд үр дүн олдсонгүй" in search_res:
+            # Check if query matches core known topics
+            core_topics = ["ипотек", "цалин", "хадгаламж", "карт", "лавлах", "салбар"]
+            if not any(k in user_query.lower() for k in core_topics):
+                self.log_event("Guardrail", "Empty search context on ungrounded query triggered escalation fallback", level="WARN")
+                return {
+                    "decision": "escalate",
+                    "reason": "Баталгаат эх сурвалжид мэдээлэл олдоогүй тул буруу мэдээлэл өгөхөөс сэргийлж операторт шилжүүллээ (Anti-Hallucination).",
+                    "requires_human": True
+                }
+
         prompt = f"""Та Хаан Банкны Амирлан нэртэй цахим туслахын дүн шинжилгээ хийх систем.
 Хэрэглэгчийн асуулт: "{user_query}"
 Хэрэглэгчийн зорилго: {json.dumps(intent_data, ensure_ascii=False)}
-Олдсон мэдээлэл: {retrieval_data['search_results']}
-Банкны баталгаат мэдээлэл: {retrieval_data['verified_context']}
+Олдсон мэдээлэл: {search_res}
+Банкны баталгаат мэдээлэл: {verified_ctx}
 
 Дараах шалгуураар шийдвэр гаргана уу:
-1. Олдсон мэдээлэл хангалттай бөгөөд хэрэглэгчийн асуултад шууд хариулах боломжтой бол: decision = "answer"
-2. Хэрэв банкны хувийн нууц мэдээлэл шаардсан, картын гүйлгээний маргаан, эсвэл мэдээлэл дутуу бол: decision = "escalate"
+1. Олдсон мэдээлэл хангалттай бөгөөд хэрэглэгчийн асуултад шууд баттай хариулах боломжтой бол: decision = "answer"
+2. Хэрэв банкны хувийн нууц мэдээлэл шаардсан, санхүүгийн гүйлгээ хийхийг хүссэн, картын маргаан, эсвэл мэдээлэл дутуу бол: decision = "escalate"
 
 ЗӨВХӨН JSON форматаар хариул:
 {{
@@ -317,10 +502,16 @@ class AmirlanVoicebot:
         return decision_data
 
     # =========================================================================
-    # STAGE 5: Response Generation (Narakeet .m4a with Ganbaatar voice)
+    # STAGE 5: Response Generation (Role-Separated Non-Injectable Messages)
     # =========================================================================
-    def generate_mongolian_response(self, user_query: str, retrieval_data: Dict[str, Any], is_escalation: bool = False) -> str:
-        """Formulates high-standard, polite Mongolian banking response using prompt template."""
+    def generate_mongolian_response(self, user_query: str, retrieval_data: Dict[str, Any], is_escalation: bool = False, custom_override: Optional[str] = None) -> str:
+        """
+        Formulates high-standard, polite Mongolian banking response.
+        Uses role-separated SystemMessage and HumanMessage to prevent prompt injection.
+        """
+        if custom_override:
+            return custom_override
+
         if is_escalation:
             return (
                 "Эрхэм харилцагч танд энэ өдрийн мэнд хүргэе. "
@@ -329,30 +520,32 @@ class AmirlanVoicebot:
                 "түр хүлээнэ үү, бид таныг хамгийн ойрын оператортой холбож өгөхөд бэлэн байна."
             )
 
-        try:
-            prompt = self.system_prompt_template.format(
-                user_query=user_query,
-                search_results=retrieval_data.get('search_results', ''),
-                verified_context=retrieval_data.get('verified_context', '')
-            )
-        except Exception:
-            prompt = (
-                f"{self.system_prompt_template}\n\n"
-                f"Хэрэглэгчийн асуулт: \"{user_query}\"\n"
-                f"Банкны албан ёсны эх сурвалж:\n"
+        # Content Guardrail: Off-topic query steering
+        off_topic_reply = self.check_off_topic_query(user_query)
+        if off_topic_reply:
+            return off_topic_reply
+
+        # Non-Injectable Role-Separated Prompting Protocol
+        messages = [
+            SystemMessage(content=self.system_prompt),
+            HumanMessage(content=(
+                f"--- БАНКНЫ БАТАЛГААТ ЭХ СУРВАЛЖ ---\n"
                 f"{retrieval_data.get('search_results', '')}\n"
-                f"{retrieval_data.get('verified_context', '')}"
-            )
+                f"{retrieval_data.get('verified_context', '')}\n\n"
+                f"--- ХЭРЭГЛЭГЧИЙН АСУУЛТ ---\n"
+                f"{user_query}"
+            ))
+        ]
 
         try:
-            res = self.llm.invoke(prompt)
+            res = self.llm.invoke(messages)
             clean_text = res.content.strip()
             # Remove markdown headers and bullets for natural audio reading
             clean_text = re.sub(r"[#*_\-`]", " ", clean_text)
             clean_text = re.sub(r"\s+", " ", clean_text).strip()
             return clean_text
         except Exception as e:
-            return f"Эрхэм харилцагч танд энэ өдрийн мэнд хүргэе. Хаан Банкны талаарх дэлгэрэнгүй мэдээллийг 1800-1917 утсаар болон khanbank.com хаягаар лавлана уу."
+            return "Эрхэм харилцагч танд энэ өдрийн мэнд хүргэе. Хаан Банкны талаарх дэлгэрэнгүй мэдээллийг 1800-1917 утсаар болон khanbank.com хаягаар лавлана уу."
 
     def _trim_for_tts(self, text: str, max_bytes: int = 950) -> str:
         """Safely trims text to be within Narakeet's 1024-byte synchronous streaming limit."""
@@ -379,6 +572,7 @@ class AmirlanVoicebot:
         """
         Cleans up recorded input audio and synthesized output audio files.
         When clear_cache is True, removes all files from input-audio and output-audio.
+        Also resets session safeguard counters and rate limiters.
         """
         cleaned_count = 0
         for target_dir in [self.input_dir, self.output_dir]:
@@ -394,7 +588,12 @@ class AmirlanVoicebot:
                         cleaned_count += 1
                     except Exception as e:
                         print(f"Warning: could not delete {fpath}: {e}")
-        self.log_event("Cleanup", f"Cleaned up {cleaned_count} audio files (clear_cache={clear_cache})")
+        
+        # Reset session safeguard states
+        self.consecutive_unclear_count = 0
+        self.session_turn_count = 0
+        self.request_timestamps = []
+        self.log_event("Cleanup", f"Cleaned up {cleaned_count} audio files and reset session safeguards (clear_cache={clear_cache})")
         return cleaned_count
 
     def synthesize_speech_narakeet(self, text: str, voice: str = "Ankhmaa") -> str:
@@ -522,33 +721,170 @@ class AmirlanVoicebot:
         }
 
     # =========================================================================
-    # MASTER PIPELINE (Stages 1 -> 6 Orchestration)
+    # MASTER PIPELINE (Stages 1 -> 6 Orchestration with All Guardrails)
     # =========================================================================
     def run_full_pipeline(self, audio_bytes: Optional[bytes] = None, text_query: Optional[str] = None, voice: str = "Ankhmaa") -> Dict[str, Any]:
-        """Runs the complete 6-stage end-to-end voicebot workflow."""
+        """Runs the complete 6-stage end-to-end voicebot workflow with multi-layered guardrails."""
         start_time = time.time()
         stage_logs = []
-        
-        # --- STAGE 1: Call Intake ---
+
+        # --- Operational Safeguard 1: Rate Limiting & Cost Control ---
+        now = time.time()
+        self.request_timestamps = [t for t in self.request_timestamps if now - t < 60.0]
+        if len(self.request_timestamps) >= 30:
+            self.log_event("Security", "Rate limit exceeded (30 req/min)", level="WARN")
+            raise RuntimeError("Хүсэлтийн давтамжийн хязгаар хэтэрсэн байна (Rate Limit). Түр хүлээнэ үү.")
+        self.request_timestamps.append(now)
+        self.session_turn_count += 1
+
+        # Operational Safeguard 2: Max Session Turn Circuit Breaker
+        if self.session_turn_count > 25:
+            self.log_event("CircuitBreaker", "Session turn limit exceeded (25 turns)", level="WARN")
+            escalation_data = self.execute_escalation_protocol("Session turn limit reached", {"category": "human_escalation"})
+            response_text = (
+                "Эрхэм харилцагч танд энэ өдрийн мэнд хүргэе. "
+                "Ярианы дээд хугацаа хүрсэн тул үйлчилгээг түргэн шуурхай шийдвэрлэхийн тулд "
+                "таны дуудлагыг мэргэжилтэнд шууд шилжүүллээ. Та 1800-1917 луу залгана уу."
+            )
+            audio_fn = self.synthesize_speech_narakeet(response_text, voice=voice)
+            return {
+                "transcript": "Ярианы дээд хугацаа хүрсэн.",
+                "response_text": response_text,
+                "audio_url": f"/audio/{audio_fn}",
+                "intent": {"category": "human_escalation", "topic": "Хугацаа хэтэрсэн", "confidence": 1.0},
+                "retrieval": {"search_query": "", "search_results": ""},
+                "decision": {"decision": "escalate", "reason": "Session turn limit exceeded (Circuit Breaker)"},
+                "escalation": escalation_data,
+                "is_escalated": True,
+                "stage_logs": stage_logs,
+                "execution_time_sec": round(time.time() - start_time, 2)
+            }
+
+        # --- STAGE 1: Call Intake & Transcription ---
         stage1_start = time.time()
         if audio_bytes:
-            transcript = self.transcribe_audio_chirp3(audio_bytes)
+            raw_transcript = self.transcribe_audio_chirp3(audio_bytes)
         elif text_query:
-            transcript = text_query.strip()
+            # Token/character clamp for cost & prompt length protection (max 500 chars)
+            raw_transcript = text_query.strip()[:500]
         else:
             raise ValueError("Аудио эсвэл текст хүсэлт өгөгдөөгүй байна.")
 
-        if not transcript:
-            transcript = "Дуу хоолой тодорхой сонсогдсонгүй."
-            
+        if not raw_transcript:
+            raw_transcript = "Дуу хоолой тодорхой сонсогдсонгүй."
+
+        # Input Guardrail 1: PII & Account Data Masking
+        transcript = self.mask_pii_data(raw_transcript)
+        if transcript != raw_transcript:
+            self.log_event("Guardrail", "Sensitive digits masked in transcript (PII Protection)", level="INFO")
+
         stage_logs.append({
             "stage": 1,
             "name": "Call Intake",
             "title": "Дуудлага хүлээн авах & Дуу таних (Chirp 3)",
             "status": "completed",
             "duration": round(time.time() - stage1_start, 2),
-            "details": f"Танигдсан үгс: \"{transcript}\""
+            "details": f"Танигдсан үгс (PII-Masked): \"{transcript}\""
         })
+
+        # --- Operational Safeguard 3: Consecutive Unclear Audio Circuit Breaker ---
+        if transcript == "Дуу хоолой тодорхой сонсогдсонгүй.":
+            self.consecutive_unclear_count += 1
+            if self.consecutive_unclear_count >= 2:
+                self.log_event("CircuitBreaker", "Repeated unclear audio (2x) tripped automatic human escalation", level="WARN")
+                intent = {"category": "human_escalation", "topic": "Сонсгол тодорхойгүй", "confidence": 1.0, "is_escalation_needed": True}
+                retrieval = {"search_query": "site:khanbank.com", "search_results": "Тодорхойгүй яриа.", "verified_context": "", "source_url": "https://www.khanbank.com"}
+                decision = {"decision": "escalate", "reason": "Яриа 2 удаа дараалан тодорхойгүй байсан тул операторт шилжүүллээ (Circuit Breaker).", "requires_human": True}
+                escalation_data = self.execute_escalation_protocol(transcript, intent)
+                response_text = (
+                    "Эрхэм харилцагч танд энэ өдрийн мэнд хүргэе. "
+                    "Таны яриа тодорхой сонсогдохгүй байгаа тул бид таныг оператортой шууд холбож байна. "
+                    "Та 1800-1917 лавлах утсаар 24 цагийн турш холбогдох боломжтой."
+                )
+                audio_fn = self.synthesize_speech_narakeet(response_text, voice=voice)
+                return {
+                    "transcript": transcript,
+                    "response_text": response_text,
+                    "audio_url": f"/audio/{audio_fn}",
+                    "intent": intent,
+                    "retrieval": retrieval,
+                    "decision": decision,
+                    "escalation": escalation_data,
+                    "is_escalated": True,
+                    "stage_logs": stage_logs,
+                    "execution_time_sec": round(time.time() - start_time, 2)
+                }
+        else:
+            self.consecutive_unclear_count = 0
+
+        # --- Input Guardrail 2: Prompt Injection & Jailbreak Pre-LLM Filter ---
+        injection_alert = self.check_prompt_injection(transcript)
+        if injection_alert:
+            response_text = injection_alert["response_text"]
+            audio_fn = self.synthesize_speech_narakeet(response_text, voice=voice)
+            return {
+                "transcript": transcript,
+                "response_text": response_text,
+                "audio_url": f"/audio/{audio_fn}",
+                "intent": {"category": "security_deflection", "topic": "Аюулгүй байдлын хамгаалалт", "confidence": 1.0, "is_escalation_needed": False},
+                "retrieval": {"search_query": "", "search_results": "Pre-LLM blocked."},
+                "decision": {"decision": "blocked", "reason": "Prompt injection detected.", "requires_human": False},
+                "escalation": None,
+                "is_escalated": False,
+                "stage_logs": stage_logs + [{
+                    "stage": 2, "name": "Security Guardrail", "title": "Prompt Injection Interception",
+                    "status": "blocked", "duration": 0.0, "details": "Jailbreak/Prompt injection payload intercepted."
+                }],
+                "execution_time_sec": round(time.time() - start_time, 2)
+            }
+
+        # --- Input Guardrail 3: Profanity & Abuse Interception ---
+        abuse_alert = self.check_profanity_and_abuse(transcript)
+        if abuse_alert:
+            intent = {"category": "human_escalation", "topic": "Зүй бус үг хэллэг", "confidence": 1.0, "is_escalation_needed": True}
+            decision = {"decision": "escalate", "reason": "Зүй бус харилцааг операторт шилжүүллээ.", "requires_human": True}
+            escalation_data = self.execute_escalation_protocol(transcript, intent)
+            response_text = abuse_alert["response_text"]
+            audio_fn = self.synthesize_speech_narakeet(response_text, voice=voice)
+            return {
+                "transcript": transcript,
+                "response_text": response_text,
+                "audio_url": f"/audio/{audio_fn}",
+                "intent": intent,
+                "retrieval": {"search_query": "", "search_results": ""},
+                "decision": decision,
+                "escalation": escalation_data,
+                "is_escalated": True,
+                "stage_logs": stage_logs + [{
+                    "stage": 2, "name": "Abuse Guardrail", "title": "Profanity & Abuse Filter",
+                    "status": "triggered", "duration": 0.0, "details": "Caller escalated due to inappropriate language."
+                }],
+                "execution_time_sec": round(time.time() - start_time, 2)
+            }
+
+        # --- Content Guardrail: Financial Compliance Boundaries ---
+        compliance_alert = self.check_financial_compliance(transcript)
+        if compliance_alert:
+            intent = {"category": "account_service", "topic": "Санхүүгийн гүйлгээний хүсэлт", "confidence": 1.0, "is_escalation_needed": True}
+            decision = {"decision": "escalate", "reason": "Санхүүгийн гүйлгээ хийх эрхгүй (Compliance Boundary).", "requires_human": True}
+            escalation_data = self.execute_escalation_protocol(transcript, intent)
+            response_text = compliance_alert["response_text"]
+            audio_fn = self.synthesize_speech_narakeet(response_text, voice=voice)
+            return {
+                "transcript": transcript,
+                "response_text": response_text,
+                "audio_url": f"/audio/{audio_fn}",
+                "intent": intent,
+                "retrieval": {"search_query": "", "search_results": "Strict financial compliance boundary."},
+                "decision": decision,
+                "escalation": escalation_data,
+                "is_escalated": True,
+                "stage_logs": stage_logs + [{
+                    "stage": 2, "name": "Compliance Guardrail", "title": "Financial Compliance Policy",
+                    "status": "triggered", "duration": 0.0, "details": "Autonomous financial execution prevented."
+                }],
+                "execution_time_sec": round(time.time() - start_time, 2)
+            }
 
         # --- STAGE 2: Intent Understanding ---
         stage2_start = time.time()
@@ -559,7 +895,7 @@ class AmirlanVoicebot:
             "title": "Зорилго ангилах (Gemini 2.5 Flash)",
             "status": "completed",
             "duration": round(time.time() - stage2_start, 2),
-            "details": f"Сэдэв: {intent.get('topic')} ({intent.get('category')})"
+            "details": f"Сэдэв: {intent.get('topic')} ({intent.get('category')}, Confidence: {intent.get('confidence', 0.9):.2f})"
         })
 
         # --- STAGE 3: Information Retrieval ---

@@ -2057,10 +2057,44 @@ input:checked + .toggle-slider:before {
     resize: vertical;
 }
 
+.dev-prompt-textarea:read-only {
+    background: #fbfbfc;
+    color: #333333;
+    border-color: rgba(0, 0, 0, 0.12);
+    cursor: default;
+}
+
 .dev-prompt-textarea:focus {
     outline: none;
     border-color: var(--color-orange);
     box-shadow: 0 0 0 3px rgba(255, 137, 40, 0.15);
+}
+
+.read-only-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: rgba(255, 65, 78, 0.08);
+    color: var(--color-pink-red);
+    border: 1px solid rgba(255, 65, 78, 0.25);
+    border-radius: 999px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.guardrail-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    background: rgba(255, 137, 40, 0.1);
+    color: #c95600;
+    border: 1px solid rgba(255, 137, 40, 0.25);
+    border-radius: 6px;
+    font-size: 0.76rem;
+    font-weight: 600;
 }
 
 .prompt-vars-legend {
