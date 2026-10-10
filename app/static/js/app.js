@@ -43,8 +43,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const intelToggleBtn = document.getElementById("intelToggleBtn");
     const intelBody = document.getElementById("intelBody");
     const intelIntentVal = document.getElementById("intelIntentVal");
-    const intelDecisionVal = document.getElementById("intelDecisionVal");
     const intelSnippetVal = document.getElementById("intelSnippetVal");
+    const intelUriLink = document.getElementById("intelUriLink");
+    const intelUriBadge = document.getElementById("intelUriBadge");
 
     // Voice Selector (Ankhmaa default, Ganbaatar supported)
     const voiceSelect = document.getElementById("voiceSelect");
@@ -749,8 +750,19 @@ document.addEventListener("DOMContentLoaded", () => {
         if (intelDecisionVal && data.decision) {
             intelDecisionVal.textContent = `${data.decision.decision.toUpperCase()} - ${data.decision.reason}`;
         }
-        if (intelSnippetVal && data.retrieval) {
-            intelSnippetVal.textContent = data.retrieval.search_results || data.retrieval.verified_context;
+        if (data.retrieval) {
+            const pageUri = data.retrieval.source_url || "https://www.khanbank.com";
+            if (intelUriLink) {
+                intelUriLink.href = pageUri;
+                intelUriLink.textContent = pageUri;
+                intelUriLink.title = `Access Khan Bank Page: ${pageUri}`;
+            }
+            if (intelUriBadge) {
+                intelUriBadge.style.display = "inline-flex";
+            }
+            if (intelSnippetVal) {
+                intelSnippetVal.textContent = data.retrieval.search_results || data.retrieval.verified_context;
+            }
         }
         // Pulse badge on navbar tab
         if (intelBadge) {

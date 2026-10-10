@@ -407,20 +407,62 @@ class AmirlanVoicebot:
 
         return intent_data
 
+    def resolve_khanbank_page_uri(self, query: str, raw_search_results: str) -> str:
+        """
+        Resolves the specific official Khanbank.com URI page accessed for the inquiry.
+        Extracts matched URL from search results if present, or resolves to official portal paths.
+        """
+        # 1. Check if raw search results contain a specific khanbank.com URL
+        url_matches = re.findall(r"https?://(?:www\.)?khanbank\.com/[a-zA-Z0-9_\-\./]+", raw_search_results)
+        if url_matches:
+            for u in url_matches:
+                clean_u = u.rstrip(".,;:)'\"")
+                if len(clean_u.replace("https://www.khanbank.com", "").replace("http://www.khanbank.com", "").strip("/")) > 2:
+                    return clean_u
+
+        # 2. Topic-specific deep link mapping to official Khan Bank portal sections
+        q = query.lower()
+        if any(w in q for w in ["ипотек", "орон сууц", "mortgage"]):
+            return "https://www.khanbank.com/mn/personal/loans/mortgage-loan"
+        elif any(w in q for w in ["цалин", "цалингийн", "salary"]):
+            return "https://www.khanbank.com/mn/personal/loans/salary-loan"
+        elif any(w in q for w in ["хэрэглээний", "машин", "автомашин", "лизинг"]):
+            return "https://www.khanbank.com/mn/personal/loans/consumer-loan"
+        elif any(w in q for w in ["зээл", "loan"]):
+            return "https://www.khanbank.com/mn/personal/loans"
+        elif any(w in q for w in ["карт", "дебит", "кредит", "signature", "platinum", "card"]):
+            return "https://www.khanbank.com/mn/personal/cards"
+        elif any(w in q for w in ["хадгаламж", "данс", "хүү", "deposit", "savings"]):
+            return "https://www.khanbank.com/mn/personal/deposits"
+        elif any(w in q for w in ["апп", "аппликейшн", "интернет банк", "цахим банк", "digital"]):
+            return "https://www.khanbank.com/mn/personal/digital-banking"
+        elif any(w in q for w in ["салбар", "атм", "экспресс", "байршил", "хаяг", "цагийн хуваарь", "location"]):
+            return "https://www.khanbank.com/mn/locations"
+        elif any(w in q for w in ["ханш", "валют", "доллар", "юань", "rate"]):
+            return "https://www.khanbank.com/mn/personal/rates"
+        elif any(w in q for w in ["шимтгэл", "хураамж", "тариф", "tariff", "fee"]):
+            return "https://www.khanbank.com/mn/personal/tariffs"
+        elif any(w in q for w in ["лавлах", "холбоо барих", "утас", "contact"]):
+            return "https://www.khanbank.com/mn/personal/contact"
+        else:
+            return "https://www.khanbank.com/mn/personal"
+
     # =========================================================================
     # STAGE 3: Information Retrieval (Targeted khanbank.com Grounding)
     # =========================================================================
     def retrieve_khanbank_info(self, query: str, search_keywords: str) -> Dict[str, Any]:
-        """Searches official Khan Bank information."""
+        """Searches official Khan Bank information and resolves specific page URI."""
         full_query = f"site:khanbank.com {search_keywords}"
         raw_result = ""
-        source_url = "https://www.khanbank.com"
         
         if self.search_tool:
             try:
                 raw_result = self.search_tool.run(full_query)
             except Exception as e:
                 raw_result = f"Хайлтын системийн сануулга: {e}"
+
+        # Resolve the specific Khanbank.com URI accessed
+        source_url = self.resolve_khanbank_page_uri(f"{query} {search_keywords}", raw_result)
 
         # Standard Khan Bank verified data bank
         knowledge_context = """

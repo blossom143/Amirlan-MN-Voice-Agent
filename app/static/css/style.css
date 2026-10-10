@@ -356,7 +356,7 @@ body {
    ========================================================================== */
 .workspace-grid {
     display: grid;
-    grid-template-columns: 1.18fr 1fr;
+    grid-template-columns: 1.36fr 1fr;
     gap: 24px;
     flex: 1;
     align-items: start;
@@ -724,6 +724,51 @@ body {
     font-size: 0.84rem;
     color: var(--text-primary);
     font-weight: 600;
+}
+
+.intel-snippet-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.intel-uri-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.74rem;
+    font-family: var(--font-mono);
+    color: var(--color-orange);
+    background: rgba(255, 137, 40, 0.08);
+    border: 1px solid rgba(255, 137, 40, 0.28);
+    border-radius: var(--radius-full);
+    padding: 2px 10px;
+    max-width: 100%;
+}
+
+.uri-icon-svg {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    color: var(--color-orange);
+}
+
+.intel-uri-link {
+    color: var(--color-orange);
+    text-decoration: none;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 320px;
+}
+
+.intel-uri-link:hover {
+    text-decoration: underline;
+    color: var(--color-pink-red);
 }
 
 .intel-snippet-box {
