@@ -1,460 +1,409 @@
 <!DOCTYPE html>
-<html lang="mn">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Амирлан • Хаан Банкны Ухаалаг Дуу Хоолойн Туслах | Amirlan Voicebot</title>
-    <meta name="description" content="Хаан Банкны дээд зэрэглэлийн хиймэл оюун ухаант дуу хоолойн туслах Амирлан. Google Cloud Chirp 3, Gemini 2.5 Flash, Narakeet Ганбаатар дуу хоолойгоор ажилладаг.">
-    
-    <!-- Google Fonts: Cinzel & Plus Jakarta Sans -->
+    <title>Amirlan • Conversational Voice AI Agent</title>
+    <meta name="description" content="Next-generation autonomous speech-to-speech AI voice agent powered by Google Cloud Chirp 3, Gemini 2.5 Flash, and Narakeet Neural TTS.">
+
+    <!-- Google Fonts: Space Grotesk, Plus Jakarta Sans, Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap" rel="stylesheet">
-    
-    <!-- Custom Luxury Style -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Sleek Luxury CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <!-- Luxury Background Ambient Lighting -->
+    <!-- Subtle Ambient Backdrop -->
     <div class="ambient-glow ambient-glow-1"></div>
     <div class="ambient-glow ambient-glow-2"></div>
-    <div class="ambient-pattern"></div>
+    <div class="ambient-grid"></div>
 
-    <div class="app-wrapper">
+    <div class="app-container">
         <!-- ========================================================= -->
-        <!-- HEADER: Khan Bank Luxury Identity                        -->
+        <!-- HEADER                                                    -->
         <!-- ========================================================= -->
-        <header class="app-header">
-            <div class="header-inner">
-                <div class="brand-block">
-                    <!-- Khan Bank Emblem SVG -->
-                    <div class="brand-logo-shield">
-                        <svg class="khan-emblem" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <circle cx="50" cy="50" r="48" stroke="url(#goldGradient)" stroke-width="2.5" stroke-dasharray="4 2"/>
-                            <circle cx="50" cy="50" r="42" fill="url(#emeraldDeep)" stroke="url(#goldGradient)" stroke-width="1.5"/>
-                            <!-- Stylized Khan Bank Golden Tree / Crown Emblem -->
-                            <path d="M50 18 L53 32 L66 28 L57 39 L71 44 L57 51 L68 62 L53 60 L50 82 L47 60 L32 62 L43 51 L29 44 L43 39 L34 28 L47 32 Z" fill="url(#goldGradient)" filter="drop-shadow(0 2px 8px rgba(212,175,55,0.4))"/>
-                            <circle cx="50" cy="48" r="4" fill="#061A11" stroke="url(#goldGradient)" stroke-width="1.5"/>
-                            <defs>
-                                <linearGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                                    <stop offset="0%" stop-color="#FDF2C2"/>
-                                    <stop offset="30%" stop-color="#D4AF37"/>
-                                    <stop offset="70%" stop-color="#AA7C11"/>
-                                    <stop offset="100%" stop-color="#E5C158"/>
-                                </linearGradient>
-                                <radialGradient id="emeraldDeep" cx="50%" cy="50%" r="50%">
-                                    <stop offset="0%" stop-color="#006636"/>
-                                    <stop offset="70%" stop-color="#003D20"/>
-                                    <stop offset="100%" stop-color="#061A11"/>
-                                </radialGradient>
-                            </defs>
-                        </svg>
-                        <div class="emblem-halo"></div>
-                    </div>
-                    <div class="brand-text">
-                        <div class="brand-top-row">
-                            <span class="brand-pre">KHAN BANK</span>
-                            <span class="brand-badge-vip">PREMIUM AI</span>
-                        </div>
-                        <h1 class="brand-title">AMIRLAN <span class="brand-title-mn">АМИРЛАН</span></h1>
-                        <p class="brand-subtitle">Хаан Банкны Дээд Зэрэглэлийн Ухаалаг Дуу Хоолойн Туслах</p>
-                    </div>
+        <header class="navbar">
+            <div class="navbar-left">
+                <div class="brand-monogram">
+                    <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect width="40" height="40" rx="10" fill="#13181F"/>
+                        <rect x="0.5" y="0.5" width="39" height="39" rx="9.5" stroke="rgba(255,255,255,0.12)"/>
+                        <!-- Neural Soundwave / Monogram -->
+                        <path d="M12 20V20.5M16 14V26M20 10V30M24 16V24M28 18V22" stroke="url(#accentGrad)" stroke-width="2.5" stroke-linecap="round"/>
+                        <defs>
+                            <linearGradient id="accentGrad" x1="12" y1="10" x2="28" y2="30" gradientUnits="userSpaceOnUse">
+                                <stop stop-color="#ff414e"/>
+                                <stop offset="0.5" stop-color="#ff8928"/>
+                                <stop offset="1" stop-color="#ff414e"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
                 </div>
-
-                <div class="header-actions">
-                    <div class="system-status-pill" id="systemStatusPill">
-                        <span class="status-dot"></span>
-                        <span class="status-label">Chirp 3 • Gemini 2.5 • Ganbaatar TTS</span>
+                <div class="brand-info">
+                    <div class="brand-row">
+                        <h1 class="brand-title">AMIRLAN</h1>
+                        <span class="version-tag">VOICE AI 2.5</span>
                     </div>
-                    <a href="tel:18001917" class="hotline-quick-btn" title="Хаан Банкны лавлах утас 1800-1917">
-                        <svg class="icon-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
-                        </svg>
-                        <span>1800-1917</span>
-                    </a>
+                    <p class="brand-tagline">Autonomous Speech-to-Speech Intelligent Agent</p>
+                </div>
+            </div>
+
+            <div class="navbar-right">
+                <div class="status-indicator">
+                    <span class="status-light"></span>
+                    <span class="status-text">Chirp 3 • Gemini 2.5 • Narakeet</span>
+                </div>
+                <div class="telemetry-chip">
+                    <span class="telemetry-label">REGION</span>
+                    <span class="telemetry-val">US-CENTRAL1</span>
                 </div>
             </div>
         </header>
 
         <!-- ========================================================= -->
-        <!-- MAIN DASHBOARD: Split Screen on PC, Stacked on Mobile     -->
+        <!-- MAIN WORKSPACE: Dual Column Layout                        -->
         <!-- ========================================================= -->
-        <main class="app-main">
-            <!-- LEFT COLUMN: Voice Orb & 6-Stage Workflow Stepper -->
-            <section class="console-column">
-                <div class="luxury-card orb-card">
-                    <div class="orb-card-header">
-                        <div class="live-indicator">
-                            <span class="pulse-ring"></span>
-                            <span class="pulse-dot"></span>
-                            <span id="agentStateText">Бэлэн байна • Үг хэлэхэд бэлэн</span>
+        <main class="workspace-grid">
+            <!-- LEFT PANEL: 6-Stage Stepper Workflow & Intelligence Drawer -->
+            <section class="panel-left">
+                <!-- 6-STAGE WORKFLOW PIPELINE WITH LIVE TIMERS -->
+                <div class="sleek-card workflow-card">
+                    <div class="card-header-row">
+                        <div class="header-title-box">
+                            <span class="header-icon">✦</span>
+                            <h2 class="section-title">6-Stage Architecture Workflow</h2>
                         </div>
-                        <div class="audio-format-badge">.M4A • 24-bit Hi-Fi</div>
-                    </div>
-
-                    <!-- Interactive Voice Orb Centerpiece -->
-                    <div class="voice-orb-stage">
-                        <div class="orb-container" id="orbContainer">
-                            <div class="orb-core"></div>
-                            <div class="orb-shimmer"></div>
-                            <div class="orb-ring ring-1"></div>
-                            <div class="orb-ring ring-2"></div>
-                            <div class="orb-ring ring-3"></div>
-                            
-                            <!-- Central Icon in Orb -->
-                            <div class="orb-icon-center">
-                                <svg id="orbMicIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                                    <line x1="12" y1="19" x2="12" y2="23"/>
-                                    <line x1="8" y1="23" x2="16" y2="23"/>
-                                </svg>
-                            </div>
-                        </div>
-
-                        <!-- Real-time Audio Canvas Visualizer -->
-                        <canvas id="waveformCanvas" width="460" height="90" class="waveform-canvas"></canvas>
-                        
-                        <div class="recording-timer" id="recordingTimer" style="display: none;">
-                            <span class="rec-red-dot"></span>
-                            <span id="timerDigits">00:00</span>
+                        <div class="live-clock-badge">
+                            <span class="live-clock-label">TOTAL DURATION:</span>
+                            <span class="live-clock-val" id="totalTimeBadge">0.00s</span>
                         </div>
                     </div>
 
-                    <!-- Voice Interaction Controls -->
-                    <div class="voice-controls-bar">
-                        <!-- Big Luxury Push-To-Talk Button -->
-                        <button id="mainRecordBtn" class="luxury-gold-btn" title="Микрофон дараад асуултаа хэлнэ үү">
-                            <span class="btn-glow"></span>
-                            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                                <line x1="12" y1="19" x2="12" y2="23"/>
-                                <line x1="8" y1="23" x2="16" y2="23"/>
-                            </svg>
-                            <span id="recordBtnLabel">ДУУГААРАА АСУУХ</span>
-                        </button>
-
-                        <!-- Input Mode Selector Pills -->
-                        <div class="input-mode-selector">
-                            <button class="mode-tab active" data-mode="browser" id="tabBrowserMic">
-                                <span>📱 Хөтчийн микрофон</span>
-                            </button>
-                            <button class="mode-tab" data-mode="desktop" id="tabDesktopMic">
-                                <span>💻 Компьютерын микрофон</span>
-                            </button>
-                            <button class="mode-tab" data-mode="upload" id="tabUpload">
-                                <span>📁 Файл оруулах</span>
-                            </button>
-                            <button class="mode-tab" data-mode="text" id="tabText">
-                                <span>⌨️ Бичих</span>
-                            </button>
-                        </div>
-
-                        <!-- Hidden File Input for Audio Upload -->
-                        <input type="file" id="audioFileInput" accept="audio/*" style="display: none;">
-
-                        <!-- Text Query Input Bar (Shown when Text tab is active) -->
-                        <div class="text-input-wrapper" id="textInputWrapper" style="display: none;">
-                            <input type="text" id="textQueryInput" class="luxury-input" placeholder="Хаан Банкны үйлчилгээний тухай энд бичнэ үү (жишээ: Ипотекийн зээл)...">
-                            <button id="sendTextBtn" class="luxury-gold-small-btn">Илгээх</button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 6-STAGE WORKFLOW ARCHITECTURE STEPPER -->
-                <div class="luxury-card stepper-card">
-                    <div class="card-title-row">
-                        <div class="title-with-badge">
-                            <span class="gold-roman">VI</span>
-                            <h2 class="card-title">Архитектурын 6 Шат дамжлага</h2>
-                        </div>
-                        <span class="stepper-time-total" id="totalTimeBadge">0.00с</span>
-                    </div>
-
-                    <div class="workflow-stepper" id="workflowStepper">
+                    <div class="pipeline-stepper" id="pipelineStepper">
                         <!-- Stage 1 -->
-                        <div class="step-item" id="step1" data-step="1">
-                            <div class="step-marker">
-                                <span class="step-num">1</span>
-                                <span class="step-icon-done">✓</span>
+                        <div class="pipeline-step" id="step1" data-step="1">
+                            <div class="step-left">
+                                <div class="step-num-badge">1</div>
+                                <div class="step-line"></div>
                             </div>
-                            <div class="step-content">
-                                <div class="step-header">
-                                    <span class="step-title">Stage 1: Call Intake</span>
-                                    <span class="step-tag">Chirp 3 • mn-MN</span>
+                            <div class="step-body">
+                                <div class="step-top-line">
+                                    <span class="step-name">Stage 1: Call Intake</span>
+                                    <div class="step-right-meta">
+                                        <span class="tech-tag">Chirp 3 • mn-MN</span>
+                                        <span class="step-live-timer" id="timerStep1">0.0s</span>
+                                    </div>
                                 </div>
-                                <p class="step-desc">Микрофоны дуу хоолойг хүлээн авч монгол текст болгон хөрвүүлэх</p>
-                                <div class="step-meta" id="step1Meta">Хүлээгдэж байна...</div>
+                                <p class="step-description">Captures audio stream and transcribes speech into text via Google Cloud Chirp 3</p>
+                                <div class="step-detail-snippet" id="step1Meta">Idle</div>
                             </div>
                         </div>
 
                         <!-- Stage 2 -->
-                        <div class="step-item" id="step2" data-step="2">
-                            <div class="step-marker">
-                                <span class="step-num">2</span>
-                                <span class="step-icon-done">✓</span>
+                        <div class="pipeline-step" id="step2" data-step="2">
+                            <div class="step-left">
+                                <div class="step-num-badge">2</div>
+                                <div class="step-line"></div>
                             </div>
-                            <div class="step-content">
-                                <div class="step-header">
-                                    <span class="step-title">Stage 2: Intent Understanding</span>
-                                    <span class="step-tag">Gemini 2.5 Flash</span>
+                            <div class="step-body">
+                                <div class="step-top-line">
+                                    <span class="step-name">Stage 2: Intent Understanding</span>
+                                    <div class="step-right-meta">
+                                        <span class="tech-tag">Gemini 2.5 Flash</span>
+                                        <span class="step-live-timer" id="timerStep2">0.0s</span>
+                                    </div>
                                 </div>
-                                <p class="step-desc">Зорилгыг ялган ангилах (Зээл, данс, карт, лавлах, эсвэл оператор)</p>
-                                <div class="step-meta" id="step2Meta">Хүлээгдэж байна...</div>
+                                <p class="step-description">Classifies domain category, service intent, and escalation urgency</p>
+                                <div class="step-detail-snippet" id="step2Meta">Idle</div>
                             </div>
                         </div>
 
                         <!-- Stage 3 -->
-                        <div class="step-item" id="step3" data-step="3">
-                            <div class="step-marker">
-                                <span class="step-num">3</span>
-                                <span class="step-icon-done">✓</span>
+                        <div class="pipeline-step" id="step3" data-step="3">
+                            <div class="step-left">
+                                <div class="step-num-badge">3</div>
+                                <div class="step-line"></div>
                             </div>
-                            <div class="step-content">
-                                <div class="step-header">
-                                    <span class="step-title">Stage 3: Information Retrieval</span>
-                                    <span class="step-tag">khanbank.com Grounding</span>
+                            <div class="step-body">
+                                <div class="step-top-line">
+                                    <span class="step-name">Stage 3: Information Retrieval</span>
+                                    <div class="step-right-meta">
+                                        <span class="tech-tag">Targeted Grounding</span>
+                                        <span class="step-live-timer" id="timerStep3">0.0s</span>
+                                    </div>
                                 </div>
-                                <p class="step-desc">Зөвхөн Хаан Банкны албан ёсны эх сурвалжаас зорилтот мэдээлэл шүүх</p>
-                                <div class="step-meta" id="step3Meta">Хүлээгдэж байна...</div>
+                                <p class="step-description">Retrieves verified knowledge base and official data sources</p>
+                                <div class="step-detail-snippet" id="step3Meta">Idle</div>
                             </div>
                         </div>
 
                         <!-- Stage 4 -->
-                        <div class="step-item" id="step4" data-step="4">
-                            <div class="step-marker">
-                                <span class="step-num">4</span>
-                                <span class="step-icon-done">✓</span>
+                        <div class="pipeline-step" id="step4" data-step="4">
+                            <div class="step-left">
+                                <div class="step-num-badge">4</div>
+                                <div class="step-line"></div>
                             </div>
-                            <div class="step-content">
-                                <div class="step-header">
-                                    <span class="step-title">Stage 4: Decision Making</span>
-                                    <span class="step-tag">LangGraph ReAct</span>
+                            <div class="step-body">
+                                <div class="step-top-line">
+                                    <span class="step-name">Stage 4: Decision Making</span>
+                                    <div class="step-right-meta">
+                                        <span class="tech-tag">ReAct Engine</span>
+                                        <span class="step-live-timer" id="timerStep4">0.0s</span>
+                                    </div>
                                 </div>
-                                <p class="step-desc">Олдсон мэдээлэл хүсэлтийг бүрэн хангаж буй эсэхийг баталгаажуулах</p>
-                                <div class="step-meta" id="step4Meta">Хүлээгдэж байна...</div>
+                                <p class="step-description">Evaluates response completeness and verifies if human transfer is required</p>
+                                <div class="step-detail-snippet" id="step4Meta">Idle</div>
                             </div>
                         </div>
 
                         <!-- Stage 5 -->
-                        <div class="step-item" id="step5" data-step="5">
-                            <div class="step-marker">
-                                <span class="step-num">5</span>
-                                <span class="step-icon-done">✓</span>
+                        <div class="pipeline-step" id="step5" data-step="5">
+                            <div class="step-left">
+                                <div class="step-num-badge">5</div>
+                                <div class="step-line"></div>
                             </div>
-                            <div class="step-content">
-                                <div class="step-header">
-                                    <span class="step-title">Stage 5: Response Generation</span>
-                                    <span class="step-tag">Narakeet Ganbaatar .m4a</span>
+                            <div class="step-body">
+                                <div class="step-top-line">
+                                    <span class="step-name">Stage 5: Response Generation</span>
+                                    <div class="step-right-meta">
+                                        <span class="tech-tag">Narakeet .m4a</span>
+                                        <span class="step-live-timer" id="timerStep5">0.0s</span>
+                                    </div>
                                 </div>
-                                <p class="step-desc">Банкны ёс зүйт монгол хариу бэлтгэж, Ганбаатар хоолойгоор аудио үүсгэх</p>
-                                <div class="step-meta" id="step5Meta">Хүлээгдэж байна...</div>
+                                <p class="step-description">Formulates polite response and synthesizes audio with Ganbaatar voice</p>
+                                <div class="step-detail-snippet" id="step5Meta">Idle</div>
                             </div>
                         </div>
 
                         <!-- Stage 6 -->
-                        <div class="step-item" id="step6" data-step="6">
-                            <div class="step-marker">
-                                <span class="step-num">6</span>
-                                <span class="step-icon-done">✓</span>
+                        <div class="pipeline-step" id="step6" data-step="6">
+                            <div class="step-left">
+                                <div class="step-num-badge">6</div>
                             </div>
-                            <div class="step-content">
-                                <div class="step-header">
-                                    <span class="step-title">Stage 6: Human Escalation</span>
-                                    <span class="step-tag gold-tag">1800-1917 Protocol</span>
+                            <div class="step-body">
+                                <div class="step-top-line">
+                                    <span class="step-name">Stage 6: Human Escalation</span>
+                                    <div class="step-right-meta">
+                                        <span class="tech-tag tag-escalation">1800-1917 Hotline</span>
+                                        <span class="step-live-timer" id="timerStep6">0.0s</span>
+                                    </div>
                                 </div>
-                                <p class="step-desc">Оператор хүссэн үед банкны стандартын дагуу мэргэжилтэнд шууд шилжүүлэх</p>
-                                <div class="step-meta" id="step6Meta">Шаардлагатай үед автоматаар идэвхжинэ</div>
+                                <p class="step-description">Routes restricted inquiries or explicit requests to live human operators</p>
+                                <div class="step-detail-snippet" id="step6Meta">Standby</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Intelligence Reasoning Drawer -->
+                <div class="sleek-card intel-card" id="intelCard" style="display: none;">
+                    <div class="intel-header" id="intelToggleBtn">
+                        <div class="intel-header-left">
+                            <span class="header-icon">⚡</span>
+                            <span class="intel-heading">Agent Reasoning & Source Grounding</span>
+                        </div>
+                        <span class="intel-toggle-arrow">▼</span>
+                    </div>
+                    <div class="intel-body" id="intelBody">
+                        <div class="intel-details-grid">
+                            <div class="intel-item">
+                                <span class="intel-item-label">DETECTED INTENT</span>
+                                <span class="intel-item-value" id="intelIntentVal">-</span>
+                            </div>
+                            <div class="intel-item">
+                                <span class="intel-item-label">DECISION OUTCOME</span>
+                                <span class="intel-item-value" id="intelDecisionVal">-</span>
+                            </div>
+                            <div class="intel-item full-width">
+                                <span class="intel-item-label">RETRIEVED KNOWLEDGE SNIPPET</span>
+                                <div class="intel-snippet-box" id="intelSnippetVal">-</div>
                             </div>
                         </div>
                     </div>
                 </div>
             </section>
 
-            <!-- RIGHT COLUMN: Dialogue & Bank Intelligence Drawer -->
-            <section class="dialogue-column">
-                <!-- VIP ESCALATION NOTIFICATION CARD (Hidden until Stage 6 triggers) -->
-                <div class="luxury-card escalation-card" id="escalationCard" style="display: none;">
+            <!-- RIGHT PANEL: Voice Chat with Bottom Input Prompt -->
+            <section class="panel-right">
+                <!-- Human Escalation Alert Card -->
+                <div class="sleek-card escalation-banner" id="escalationCard" style="display: none;">
                     <div class="esc-header">
-                        <div class="esc-badge">
-                            <svg class="esc-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <div class="esc-title-box">
+                            <svg class="esc-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                             </svg>
-                            <span>ХАРИЛЦАГЧИЙН ҮЙЛЧИЛГЭЭНИЙ ТӨВД ШИЛЖҮҮЛЛЭЭ</span>
+                            <span>HUMAN ESCALATION PROTOCOL ACTIVATED</span>
                         </div>
-                        <span class="priority-label">VIP Дараалал</span>
+                        <span class="esc-pill">Priority Queue</span>
                     </div>
                     <div class="esc-body">
-                        <p class="esc-text">
-                            Таны асуултын дагуу Хаан Банкны харилцагчийн төвийн оператортой холбох тусгай горим идэвхэжлээ.
+                        <p class="esc-description">
+                            Your inquiry has been assigned to customer support specialists. Connect directly via our 24/7 hotline.
                         </p>
-                        <div class="esc-hotline-box">
-                            <div class="hotline-item">
-                                <span class="hotline-title">Лавлах дугаар:</span>
-                                <a href="tel:18001917" class="hotline-number">1800-1917</a>
-                                <span class="hotline-note">24 цаг нээлттэй • Үнэгүй</span>
+                        <div class="esc-telephony-row">
+                            <div class="telephony-block">
+                                <span class="telephony-label">Toll-free Hotline:</span>
+                                <a href="tel:18001917" class="telephony-number">1800-1917</a>
                             </div>
-                            <div class="hotline-item">
-                                <span class="hotline-title">Олон улсаас:</span>
-                                <a href="tel:+97675151917" class="hotline-number-sub">+976 7515-1917</a>
+                            <div class="telephony-block">
+                                <span class="telephony-label">International Line:</span>
+                                <a href="tel:+97675151917" class="telephony-number-sub">+976 7515-1917</a>
                             </div>
-                        </div>
-                        <div class="esc-actions">
-                            <a href="tel:18001917" class="esc-call-now-btn">
+                            <a href="tel:18001917" class="esc-direct-call-btn">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
                                 </svg>
-                                <span>Оператортой шууд залгах</span>
+                                <span>Call Operator</span>
                             </a>
                         </div>
                     </div>
                 </div>
 
-                <!-- AUDIO PLAYER CARD -->
-                <div class="luxury-card audio-player-card" id="audioPlayerCard" style="display: none;">
-                    <div class="audio-player-inner">
-                        <div class="speaker-profile">
-                            <div class="avatar-ring">
-                                <div class="avatar-img-circle">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-                                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                <!-- Conversation Card: Voice Chat -->
+                <div class="sleek-card chat-card">
+                    <div class="card-header-row">
+                        <div class="header-title-box">
+                            <span class="header-icon">💬</span>
+                            <h2 class="section-title">Voice Chat</h2>
+                        </div>
+                        <div class="header-actions">
+                            <button id="clearChatBtn" class="subtle-btn" title="Clear Chat History">Clear</button>
+                        </div>
+                    </div>
+
+                    <!-- Suggested Query Chips -->
+                    <div class="prompt-chips-tray">
+                        <span class="tray-label">Quick Prompts:</span>
+                        <button class="prompt-chip" data-query="Орон сууцны 6 хувийн зээлийн урьдчилгаа болон шаардлага юу вэ?">
+                            <span>Mortgage 6% Loan</span>
+                        </button>
+                        <button class="prompt-chip" data-query="Signature болон Platinum картын давуу тал юу вэ?">
+                            <span>Platinum & Signature Card</span>
+                        </button>
+                        <button class="prompt-chip" data-query="Цалингийн зээл авахад ямар бичиг баримт хэрэгтэй вэ?">
+                            <span>Salary Loan Details</span>
+                        </button>
+                        <button class="prompt-chip" data-query="Хадгаламжийн хүү болон нөхцөлийн талаар мэдээлэл өгнө үү.">
+                            <span>Savings Interest Rates</span>
+                        </button>
+                        <button class="prompt-chip chip-esc" data-query="Би оператор хүнтэй яаралтай ярих хэрэгтэй байна.">
+                            <span>Connect to Operator</span>
+                        </button>
+                    </div>
+
+                    <!-- Scrollable Chat Feed -->
+                    <div class="chat-feed" id="chatFeed">
+                        <!-- Initial Welcome Message from Amirlan -->
+                        <div class="message-row row-assistant">
+                            <div class="msg-card">
+                                <div class="msg-header">
+                                    <div class="avatar-badge">A</div>
+                                    <span class="speaker-title">Amirlan AI Assistant</span>
+                                    <span class="msg-timestamp">Just now</span>
+                                </div>
+                                <div class="msg-content">
+                                    Сайн байна уу? Би таны ухаалаг дуу хоолойн туслах <strong>Амирлан</strong> байна. 
+                                    Та орон сууцны зээл, хадгаламж, карт эсвэл бусад үйлчилгээний талаар дуу хоолойгоороо асууна уу.
+                                </div>
+                                <div class="msg-footer">
+                                    <span class="grounded-tag">✓ Official Knowledge Base</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- VOICE CONSOLE INPUT PROMPT AT BOTTOM OF VOICE CHAT -->
+                    <div class="chat-input-console" id="voiceInputConsole">
+                        <div class="console-meta-bar">
+                            <div class="mode-tabs">
+                                <button class="mode-btn active" data-mode="browser" id="tabBrowserMic">Browser Mic</button>
+                                <button class="mode-btn" data-mode="desktop" id="tabDesktopMic">Hardware Mic</button>
+                                <button class="mode-btn" data-mode="upload" id="tabUpload">Upload Audio</button>
+                                <button class="mode-btn" data-mode="text" id="tabText">Text Query</button>
+                            </div>
+                            <div class="meta-right">
+                                <div class="state-pill" id="agentStatePill">
+                                    <span class="state-indicator-dot"></span>
+                                    <span id="agentStateText">Ready to Listen</span>
+                                </div>
+                                <div class="audio-spec-pill">Hi-Fi Audio • 24kHz</div>
+                            </div>
+                        </div>
+
+                        <!-- Voice Controls Stage -->
+                        <div class="console-prompt-stage">
+                            <!-- Minimalist Voice Orb / Trigger -->
+                            <div class="orb-wrapper" id="orbWrapper" title="Click to Start Speaking">
+                                <div class="orb-glow-layer"></div>
+                                <div class="orb-ring ring-inner"></div>
+                                <div class="orb-ring ring-outer"></div>
+                                <div class="orb-sphere">
+                                    <svg class="mic-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+                                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                                        <line x1="12" y1="19" x2="12" y2="23"/>
+                                        <line x1="8" y1="23" x2="16" y2="23"/>
                                     </svg>
                                 </div>
                             </div>
-                            <div class="speaker-meta">
-                                <span class="speaker-name">Амирлан • Ганбаатар хоолой</span>
-                                <span class="speaker-status" id="audioPlayingStatus">Бэлэн боллоо</span>
-                            </div>
-                        </div>
 
-                        <!-- Player Scrubber & Play/Pause -->
-                        <div class="player-controls">
-                            <button id="customPlayPauseBtn" class="play-btn">
-                                <svg class="icon-play" viewBox="0 0 24 24" fill="currentColor">
-                                    <polygon points="5 3 19 12 5 21 5 3"/>
+                            <!-- Live Audio Visualizer Canvas & Recording Badge -->
+                            <div class="visualizer-wrapper">
+                                <canvas id="waveformCanvas" width="380" height="52" class="live-canvas"></canvas>
+                                <div class="rec-timer-badge" id="recordingTimer" style="display: none;">
+                                    <span class="rec-dot"></span>
+                                    <span id="timerDigits">00:00</span>
+                                </div>
+                            </div>
+
+                            <!-- Primary Push-to-Talk Action Button -->
+                            <button id="mainRecordBtn" class="primary-action-btn">
+                                <span class="btn-shine"></span>
+                                <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+                                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                                    <line x1="12" y1="19" x2="12" y2="23"/>
+                                    <line x1="8" y1="23" x2="16" y2="23"/>
                                 </svg>
-                                <svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
-                                    <rect x="6" y="4" width="4" height="16"/>
-                                    <rect x="14" y="4" width="4" height="16"/>
-                                </svg>
+                                <span id="recordBtnLabel">Start Voice Recording</span>
                             </button>
-                            <div class="time-slider-box">
-                                <span class="time-display" id="currentTimeLabel">0:00</span>
-                                <input type="range" id="audioSeeker" class="luxury-slider" min="0" max="100" value="0">
-                                <span class="time-display" id="durationLabel">0:00</span>
-                            </div>
-                            <a id="downloadAudioLink" href="#" download class="download-audio-btn" title="Аудио файл татах (.m4a)">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                    <polyline points="7 10 12 15 17 10"/>
-                                    <line x1="12" y1="15" x2="12" y2="3"/>
-                                </svg>
-                            </a>
                         </div>
-                        <audio id="nativeAudioElement" preload="auto" style="display: none;"></audio>
-                    </div>
-                </div>
 
-                <!-- PRESET LUXURY QUERY CHIPS -->
-                <div class="preset-chips-row">
-                    <span class="chips-title">Түгээмэл асуултууд:</span>
-                    <button class="preset-chip" data-query="Хаан Банкны ипотекийн 6 хувийн зээлийн нөхцөл юу вэ?">
-                        <span>🏠 Ипотекийн 6% зээл</span>
-                    </button>
-                    <button class="preset-chip" data-query="Signature болон Platinum картын давуу тал юу вэ?">
-                        <span>💳 Platinum & Signature карт</span>
-                    </button>
-                    <button class="preset-chip" data-query="Цалингийн зээлийн шаардлага болон хүү хэд вэ?">
-                        <span>💼 Цалингийн зээл</span>
-                    </button>
-                    <button class="preset-chip" data-query="Хадгаламжийн хүүгийн мэдээлэл өгнө үү.">
-                        <span>💰 Хадгаламжийн хүү</span>
-                    </button>
-                    <button class="preset-chip chip-esc" data-query="Би яг одоо оператортой холбогдох хүсэлтэй байна.">
-                        <span>👤 Оператортой холбогдох</span>
-                    </button>
-                </div>
+                        <!-- Text Query Bar (toggled when in text mode) -->
+                        <div class="text-query-bar" id="textInputWrapper" style="display: none;">
+                            <input type="text" id="textQueryInput" class="sleek-input" placeholder="Type query in Mongolian or English...">
+                            <button id="sendTextBtn" class="send-btn">Submit</button>
+                        </div>
 
-                <!-- CONVERSATION TIMELINE FEED -->
-                <div class="luxury-card conversation-card">
-                    <div class="card-title-row">
-                        <div class="title-with-badge">
-                            <span class="gold-roman">💬</span>
-                            <h2 class="card-title">Харилцан ярианы түүх</h2>
-                        </div>
-                        <button id="clearChatBtn" class="clear-chat-btn" title="Түүх арилгах">Цэвэрлэх</button>
-                    </div>
-
-                    <div class="dialogue-scroll-area" id="dialogueContainer">
-                        <!-- Welcome Message from Amirlan -->
-                        <div class="chat-bubble bubble-amirlan">
-                            <div class="bubble-header">
-                                <span class="bubble-author">Амирлан • Хаан Банк</span>
-                                <span class="bubble-time">Яг одоо</span>
-                            </div>
-                            <div class="bubble-content">
-                                Сайн байна уу, эрхэм харилцагч танд энэ өдрийн мэнд хүргэе. 
-                                Би Хаан Банкны ухаалаг дуу хоолойн туслах <strong>Амирлан</strong> байна. 
-                                Та орон сууцны зээл, хадгаламж, карт болон бусад банкны үйлчилгээний талаар дуу хоолойгоороо шууд асууж тодруулна уу.
-                            </div>
-                            <div class="bubble-footer">
-                                <span class="verified-tag">✓ Албан ёсны мэдээллийн сан</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- BANK INTELLIGENCE & GROUNDING DRAWER -->
-                <div class="luxury-card intelligence-card" id="intelligenceCard" style="display: none;">
-                    <div class="intel-toggle-header" id="intelToggleBtn">
-                        <div class="intel-title-wrap">
-                            <span class="gold-roman">🔍</span>
-                            <h3 class="intel-title">Банкны мэдээллийн эх сурвалж & Шинжилгээ</h3>
-                        </div>
-                        <span class="intel-arrow">▼</span>
-                    </div>
-                    <div class="intel-drawer-content" id="intelDrawer">
-                        <div class="intel-grid">
-                            <div class="intel-cell">
-                                <span class="intel-cell-title">Тодорхойлсон зорилго:</span>
-                                <span class="intel-cell-val" id="intelIntentVal">-</span>
-                            </div>
-                            <div class="intel-cell">
-                                <span class="intel-cell-title">Шийдвэрийн төрөл:</span>
-                                <span class="intel-cell-val" id="intelDecisionVal">-</span>
-                            </div>
-                            <div class="intel-cell-full">
-                                <span class="intel-cell-title">Албан ёсны эх сурвалж (khanbank.com):</span>
-                                <div class="intel-source-box" id="intelSourceVal">-</div>
-                            </div>
-                        </div>
+                        <!-- Hidden File Input for Audio Uploads -->
+                        <input type="file" id="audioFileInput" accept="audio/*" style="display: none;">
                     </div>
                 </div>
             </section>
         </main>
 
         <!-- ========================================================= -->
-        <!-- FOOTER: Security & Khan Bank Official Credentials         -->
+        <!-- FOOTER                                                    -->
         <!-- ========================================================= -->
         <footer class="app-footer">
-            <div class="footer-inner">
-                <div class="footer-left">
-                    <span class="bank-legal">© 2026 ХААН БАНК. Бүх эрх хуулиар хамгаалагдсан.</span>
-                    <span class="legal-separator">•</span>
-                    <span class="bank-security">256-Bit SSL Банкны аюулгүй байдлын стандарт</span>
-                </div>
-                <div class="footer-right">
-                    <span>Төсөл: <code class="project-code">{{ project_id }}</code></span>
-                    <span class="legal-separator">•</span>
-                    <span>Бүс: <code>us-speech (Chirp 3)</code></span>
-                </div>
+            <div class="footer-left">
+                <span>Amirlan Autonomous Voicebot Agent</span>
+                <span class="bullet-dot">•</span>
+                <span>Chirp 3 Neural Model (mn-MN)</span>
+                <span class="bullet-dot">•</span>
+                <span>Gemini 2.5 Flash Reasoning</span>
+            </div>
+            <div class="footer-right">
+                <span>Project: <code>{{ project_id }}</code></span>
+                <span class="bullet-dot">•</span>
+                <span>Latency Optimization Active</span>
             </div>
         </footer>
     </div>
 
-    <!-- Scripts -->
+    <!-- Client Script -->
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>

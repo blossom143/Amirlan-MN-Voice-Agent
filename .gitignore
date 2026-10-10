@@ -1,0 +1,28 @@
+# Environment Variables & API Keys (CRITICAL SECURITY)
+.env
+*.env
+
+# Audio Record & Output Files (Temporary Workspace Files)
+*.wav
+*.mp3
+*.m4a
+live_input.wav
+khanbank_response.m4a
+response.m4a
+
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE & Editor Configurations
+.vscode/
+.idea/
+.DS_Store

@@ -81,3 +81,4 @@ When prompted in your terminal or Jupyter Notebook:
 3. New UI
 4. Guard Rail for prompt injection
 5. Escalation tool function
+6. Memory refresh -> Clean up files when chat ends
