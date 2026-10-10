@@ -155,7 +155,11 @@ def system_status():
         "available_voices": ["Ankhmaa", "Ganbaatar"],
         "sounddevice_enabled": SOUNDDEVICE_AVAILABLE,
         "has_narakeet_key": bool(voicebot.narakeet_api_key),
-        "caching_enabled": voicebot.caching_enabled
+        "caching_enabled": voicebot.caching_enabled,
+        "has_speech_client": bool(voicebot.speech_client),
+        "has_vertex_llm": bool(voicebot.llm),
+        "gcp_auth_method": getattr(voicebot, "gcp_auth_method", "none"),
+        "gcp_auth_error": getattr(voicebot, "gcp_auth_error", None)
     })
 
 

@@ -36,31 +36,31 @@ Then open http://localhost:5005
 Or with Docker:
 ```bash
 docker build -t mn-voicebot .
-docker run -d --name mn-voicebot -p 5005:5005 \
-  --env-file .env \
-  -v $HOME/.config/gcloud/application_default_credentials.json:/root/.config/gcloud/application_default_credentials.json:ro \
-  mn-voicebot
+docker run -d -p 5005:5005 --env-file .env mn-voicebot
 ```
+
+## Deploying to Render.com
+
+1. In Render Dashboard, go to your Web Service -> **Environment**.
+2. Add the following environment variables:
+   - `GOOGLE_CREDENTIALS_JSON`: Copy & paste the complete JSON text from your Google Cloud Service Account key or local ADC (`cat ~/.config/gcloud/application_default_credentials.json`).
+   - `NARAKEET_API_KEY`: Your Narakeet TTS API key.
+   - `GOOGLE_CLOUD_PROJECT`: Your GCP project ID (e.g. `project-1d76ba00-25b9-47dd-8d3`).
+   - `GCP_LOCATION`: `us-central1`.
+3. Check `https://<your-service>.onrender.com/api/status` to verify `has_speech_client: true` and `has_vertex_llm: true`.
 
 ## Connecting your local knowledge base
 
-In `app/knowledge_base.txt`, add or update bank product information:
+In `app/knowledge_base/`, add or update topic-specific markdown files (e.g., `01_deposit_products.md`, `02_cards_and_digital_banking.md`):
 
-```text
----
-[SECTION: Хаан Банкны Хадгаламжийн Үйлчилгээ]
-URL: https://www.khanbank.com/mn/personal/deposits
-CATEGORY: account_service
-KEYWORDS: хадгаламж, хүү, хугацаатай, хугацаагүй
-
-[ХАДГАЛАМЖ БОЛОН ХҮҮГИЙН ХЭМЖЭЭ]:
-1. Хугацаатай хадгаламж (Төгрөг): Жилийн хүү 12.0% - 14.4%.
-2. Хугацаагүй хадгаламж (Төгрөг): Жилийн хүү 3.6% - 4.8%.
-3. Хүүхдийн хадгаламж: Жилийн хүү 13.2% - 14.0%.
----
+```markdown
+# Хаан Банкны Хадгаламжийн Үйлчилгээ
+- Хугацаатай хадгаламж (Төгрөг): Жилийн хүү 12.0% - 14.4%.
+- Хугацаагүй хадгаламж (Төгрөг): Жилийн хүү 3.6% - 4.8%.
+- Хүүхдийн хадгаламж: Жилийн хүү 13.2% - 14.0%.
 ```
 
-The retriever in `app/vector_store.py` automatically parses and indexes this file into a local FAISS vector store with sub-millisecond retrieval (< 1ms).
+The retriever in `app/vector_store.py` automatically parses, chunks, and indexes all markdown files into a local FAISS vector store with hybrid BM25 re-ranking (< 1ms).
 
 ## Configuring the Voicebot Agent & Voices
 
@@ -88,7 +88,7 @@ mn-voicebot-agent/
 │   ├── app.py              # Flask server & REST API endpoints
 │   ├── voicebot.py         # 6-Stage Amirlan Voicebot Agent & guardrails
 │   ├── vector_store.py     # Local FAISS vector store & hybrid RAG retriever
-│   ├── knowledge_base.txt  # Grounded Khan Bank product knowledge base
+│   ├── knowledge_base/     # Grounded Khan Bank product knowledge base
 │   ├── templates/
 │   │   └── index.html      # Voicebot web UI & Developer Mode dashboard
 │   └── static/

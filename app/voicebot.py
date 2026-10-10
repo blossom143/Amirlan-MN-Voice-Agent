@@ -86,17 +86,10 @@ class AmirlanVoicebot:
         self.narakeet_api_key = os.getenv("NARAKEET_API_KEY")
         self.narakeet_session = _narakeet_session
         
-        # Render.com Service Account Key JSON auto-loader
-        gcp_json = os.getenv("GOOGLE_CREDENTIALS_JSON") or os.getenv("GCP_SA_KEY")
-        if gcp_json and not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-            try:
-                creds_path = "/tmp/gcp_credentials.json"
-                with open(creds_path, "w") as f:
-                    f.write(gcp_json)
-                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds_path
-                print(f"* Configured GCP credentials from environment variable to {creds_path}")
-            except Exception as cred_err:
-                print(f"Warning: Failed to write GCP credentials from env: {cred_err}")
+        self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
+        # Multi-environment GCP Credentials Loader (Local, Docker, Render.com)
+        self._setup_gcp_credentials()
 
         # Chirp 3 uses multi-region 'us' endpoint
         self.stt_location = "us"
@@ -162,28 +155,174 @@ class AmirlanVoicebot:
         self.response_cache: Dict[str, Dict[str, Any]] = {}
 
 
+    def _setup_gcp_credentials(self):
+        """
+        Auto-loads GCP credentials across all environments (Local, Docker, Render.com).
+        Supports:
+        1. Environment variables with JSON text or base64:
+           GOOGLE_CREDENTIALS_JSON, GCP_SA_KEY, GOOGLE_APPLICATION_CREDENTIALS_JSON,
+           GCP_CREDENTIALS, GOOGLE_CREDENTIALS, GCP_SERVICE_ACCOUNT_KEY,
+           GOOGLE_CREDENTIALS_BASE64, GCP_CREDENTIALS_BASE64
+        2. GOOGLE_APPLICATION_CREDENTIALS containing inline JSON string
+        3. Render Secret Files stored under /etc/secrets/ (*.json)
+        4. Valid file path in GOOGLE_APPLICATION_CREDENTIALS (unsets if pointing to non-existent dummy file)
+        """
+        self.gcp_auth_method = "none"
+        self.gcp_auth_error = None
+        self.google_credentials = None
+        
+        # Determine a safe writable credentials path
+        try:
+            t_dir = tempfile.gettempdir()
+            creds_target_path = os.path.join(t_dir, "gcp_credentials.json")
+        except Exception:
+            creds_target_path = os.path.join(self.base_dir, ".gcp_credentials.json")
+
+        def _clean_and_parse_json(val: str) -> Optional[Dict[str, Any]]:
+            if not val:
+                return None
+            val = val.strip()
+            # Strip wrapping single/double quotes if user pasted with quotes
+            if (val.startswith("'") and val.endswith("'")) or (val.startswith('"') and val.endswith('"')):
+                val = val[1:-1].strip()
+            
+            # Check for base64 encoded JSON
+            if not val.startswith("{"):
+                try:
+                    import base64
+                    decoded = base64.b64decode(val).decode("utf-8").strip()
+                    if decoded.startswith("{"):
+                        val = decoded
+                except Exception:
+                    pass
+
+            if val.startswith("{"):
+                try:
+                    parsed = json.loads(val)
+                    if isinstance(parsed, str):
+                        parsed = json.loads(parsed)
+                    if isinstance(parsed, dict) and any(k in parsed for k in ("type", "project_id", "client_email", "refresh_token")):
+                        return parsed
+                except Exception as e:
+                    print(f"Warning parsing JSON credential: {e}")
+            return None
+
+        # 1. Clean up or handle GOOGLE_APPLICATION_CREDENTIALS
+        gac_env = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+        if gac_env:
+            parsed_gac = _clean_and_parse_json(gac_env)
+            if parsed_gac:
+                try:
+                    with open(creds_target_path, "w", encoding="utf-8") as f:
+                        json.dump(parsed_gac, f, indent=2)
+                    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds_target_path
+                    self.gcp_auth_method = "inline_gac_json"
+                    print(f"* Saved inline GOOGLE_APPLICATION_CREDENTIALS JSON to {creds_target_path}")
+                except Exception as e:
+                    print(f"Warning writing inline GAC JSON: {e}")
+            elif os.path.exists(gac_env) and os.path.getsize(gac_env) > 0:
+                self.gcp_auth_method = f"file:{gac_env}"
+            else:
+                # Points to a non-existent file (e.g. placeholder '/path/to/your/service-account-key.json')
+                print(f"* Notice: GOOGLE_APPLICATION_CREDENTIALS points to missing file '{gac_env}'. Unsetting invalid path.")
+                os.environ.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
+
+        # 2. Check Render Secret Files in /etc/secrets/
+        if self.gcp_auth_method == "none" and os.path.exists("/etc/secrets"):
+            try:
+                for s_file in os.listdir("/etc/secrets"):
+                    if s_file.endswith(".json"):
+                        s_path = os.path.join("/etc/secrets", s_file)
+                        if os.path.isfile(s_path) and os.path.getsize(s_path) > 0:
+                            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = s_path
+                            self.gcp_auth_method = f"render_secret_file:{s_path}"
+                            print(f"* Configured GCP credentials from Render Secret File: {s_path}")
+                            break
+            except Exception as sec_err:
+                print(f"Warning checking /etc/secrets: {sec_err}")
+
+        # 3. Check environment variables containing JSON (raw or base64)
+        if self.gcp_auth_method == "none":
+            candidate_keys = [
+                "GOOGLE_CREDENTIALS_JSON",
+                "GCP_SA_KEY",
+                "GOOGLE_APPLICATION_CREDENTIALS_JSON",
+                "GCP_CREDENTIALS",
+                "GOOGLE_CREDENTIALS",
+                "GCP_SERVICE_ACCOUNT_KEY",
+                "GOOGLE_CREDENTIALS_BASE64",
+                "GCP_CREDENTIALS_BASE64"
+            ]
+            for k in candidate_keys:
+                raw_val = os.getenv(k, "").strip()
+                if raw_val:
+                    parsed_dict = _clean_and_parse_json(raw_val)
+                    if parsed_dict:
+                        try:
+                            with open(creds_target_path, "w", encoding="utf-8") as f:
+                                json.dump(parsed_dict, f, indent=2)
+                            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds_target_path
+                            self.gcp_auth_method = f"env:{k}"
+                            if "project_id" in parsed_dict and not os.getenv("GOOGLE_CLOUD_PROJECT"):
+                                self.project_id = parsed_dict["project_id"]
+                            elif "quota_project_id" in parsed_dict and not os.getenv("GOOGLE_CLOUD_PROJECT"):
+                                self.project_id = parsed_dict["quota_project_id"]
+                            print(f"* Configured GCP credentials from {k} -> {creds_target_path}")
+                            break
+                        except Exception as json_err:
+                            self.gcp_auth_error = f"Failed writing credentials from {k}: {json_err}"
+                            print(f"Warning: Failed to parse/write {k}: {json_err}")
+                    else:
+                        self.gcp_auth_error = f"Environment variable {k} does not contain valid GCP JSON or base64 data"
+
+        # 4. Attempt to initialize google.auth credentials object
+        try:
+            import google.auth
+            creds_file = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+            if creds_file and os.path.exists(creds_file):
+                self.google_credentials, detected_project = google.auth.load_credentials_from_file(creds_file)
+            else:
+                self.google_credentials, detected_project = google.auth.default()
+            
+            if detected_project and not os.getenv("GOOGLE_CLOUD_PROJECT"):
+                self.project_id = detected_project
+            if self.gcp_auth_method == "none":
+                self.gcp_auth_method = "google_auth_default"
+        except Exception as auth_err:
+            if not self.gcp_auth_error:
+                self.gcp_auth_error = str(auth_err)
+
     def _init_gcp_clients(self):
         """Initializes SpeechClient and Vertex AI LLM with graceful credential fallback."""
         if not self.speech_client:
             try:
-                self.speech_client = speech.SpeechClient(
-                    client_options=ClientOptions(api_endpoint=f"{self.stt_location}-speech.googleapis.com")
-                )
+                client_opts = ClientOptions(api_endpoint=f"{self.stt_location}-speech.googleapis.com")
+                creds = getattr(self, "google_credentials", None)
+                if creds:
+                    self.speech_client = speech.SpeechClient(credentials=creds, client_options=client_opts)
+                else:
+                    self.speech_client = speech.SpeechClient(client_options=client_opts)
                 self.recognizer_path = self.speech_client.recognizer_path(self.project_id, self.stt_location, "_")
+                self.gcp_auth_error = None
             except Exception as e:
+                self.gcp_auth_error = str(e)
                 print(f"* Notice: Google Cloud SpeechClient initialization deferred: {e}")
                 self.speech_client = None
                 self.recognizer_path = None
 
         if not self.llm:
             try:
-                self.llm = ChatVertexAI(
-                    model="gemini-2.5-flash",
-                    project=self.project_id,
-                    location=self.gcp_location,
-                    temperature=0.0,
-                    max_output_tokens=140
-                )
+                creds = getattr(self, "google_credentials", None)
+                llm_kwargs = {
+                    "model": "gemini-2.5-flash",
+                    "project": self.project_id,
+                    "location": self.gcp_location,
+                    "temperature": 0.0,
+                    "max_output_tokens": 140
+                }
+                if creds:
+                    llm_kwargs["credentials"] = creds
+                self.llm = ChatVertexAI(**llm_kwargs)
             except Exception as e:
                 print(f"* Notice: Vertex AI Gemini LLM initialization deferred: {e}")
                 self.llm = None
@@ -252,9 +391,14 @@ class AmirlanVoicebot:
     def transcribe_audio_chirp3(self, audio_bytes: bytes) -> str:
         """Transcribes Mongolian speech audio into text using Google Cloud Chirp 3."""
         if not self.speech_client:
+            self._setup_gcp_credentials()
             self._init_gcp_clients()
         if not self.speech_client or not self.recognizer_path:
-            raise RuntimeError("Google Cloud SpeechClient is not initialized. Please verify GCP credentials.")
+            details = self.gcp_auth_error or "GCP default credentials not found."
+            raise RuntimeError(
+                f"Google Cloud SpeechClient is not initialized ({details}). "
+                "On Render, please set the 'GOOGLE_CREDENTIALS_JSON' or 'GCP_SA_KEY' environment variable with your Service Account or ADC JSON key."
+            )
 
         config = speech.RecognitionConfig(
             auto_decoding_config=speech.AutoDetectDecodingConfig(),
