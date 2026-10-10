@@ -23,3 +23,6 @@ python-dotenv>=1.0.0
 numpy>=1.26.0
 scipy>=1.13.0
 sounddevice>=0.5.0
+
+# Local Vector Store & Retrieval (FAISS RAG)
+faiss-cpu>=1.8.0
