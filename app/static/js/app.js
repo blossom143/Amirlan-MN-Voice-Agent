@@ -75,6 +75,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let stepStartTime = 0;
     let pipelineStartTime = 0;
     let totalLiveInterval = null;
+    let stepSimulationInterval = null;
 
     // Global Active Audio Player tracker (only 1 plays at a time)
     let currentlyPlayingAudio = null;
@@ -233,6 +234,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function stopPipelineTimers() {
+        if (stepSimulationInterval) {
+            clearInterval(stepSimulationInterval);
+            stepSimulationInterval = null;
+        }
         if (liveStepInterval) {
             clearInterval(liveStepInterval);
             liveStepInterval = null;
@@ -241,6 +246,7 @@ document.addEventListener("DOMContentLoaded", () => {
             clearInterval(totalLiveInterval);
             totalLiveInterval = null;
         }
+        pipelineStartTime = 0;
     }
 
     function resetStepper() {
@@ -264,6 +270,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function applyBackendStepLogs(stageLogs, isEscalated, totalSec) {
         stopPipelineTimers();
+
+        // Explicitly clear any lingering active states from all steps
+        for (let i = 1; i <= 6; i++) {
+            const stepEl = document.getElementById(`step${i}`);
+            if (stepEl) stepEl.classList.remove("active");
+        }
 
         stageLogs.forEach(log => {
             const stepEl = document.getElementById(`step${log.stage}`);
@@ -482,17 +494,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Simulates visual stage progression ticks while awaiting response
     function simulateLiveStepTransitions(startStep = 1) {
+        if (stepSimulationInterval) {
+            clearInterval(stepSimulationInterval);
+            stepSimulationInterval = null;
+        }
         let step = startStep;
-        const interval = setInterval(() => {
+        stepSimulationInterval = setInterval(() => {
             if (!pipelineStartTime) {
-                clearInterval(interval);
+                if (stepSimulationInterval) {
+                    clearInterval(stepSimulationInterval);
+                    stepSimulationInterval = null;
+                }
                 return;
             }
             if (step < 5) {
                 step++;
                 startStepLiveTimer(step);
+            } else {
+                if (stepSimulationInterval) {
+                    clearInterval(stepSimulationInterval);
+                    stepSimulationInterval = null;
+                }
             }
-        }, 3200);
+        }, 2200);
     }
 
     // =========================================================================
