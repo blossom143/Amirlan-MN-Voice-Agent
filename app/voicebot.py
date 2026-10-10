@@ -79,20 +79,24 @@ class AmirlanVoicebot:
         self.narakeet_api_key = os.getenv("NARAKEET_API_KEY")
         self.narakeet_session = _narakeet_session
         
+        # Render.com Service Account Key JSON auto-loader
+        gcp_json = os.getenv("GOOGLE_CREDENTIALS_JSON") or os.getenv("GCP_SA_KEY")
+        if gcp_json and not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+            try:
+                creds_path = "/tmp/gcp_credentials.json"
+                with open(creds_path, "w") as f:
+                    f.write(gcp_json)
+                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds_path
+                print(f"* Configured GCP credentials from environment variable to {creds_path}")
+            except Exception as cred_err:
+                print(f"Warning: Failed to write GCP credentials from env: {cred_err}")
+
         # Chirp 3 uses multi-region 'us' endpoint
         self.stt_location = "us"
-        self.speech_client = speech.SpeechClient(
-            client_options=ClientOptions(api_endpoint=f"{self.stt_location}-speech.googleapis.com")
-        )
-        self.recognizer_path = self.speech_client.recognizer_path(self.project_id, self.stt_location, "_")
-        
-        # Vertex AI Gemini 2.5 Flash
-        self.llm = ChatVertexAI(
-            model="gemini-2.5-flash",
-            project=self.project_id,
-            location=self.gcp_location,
-            temperature=0.2
-        )
+        self.speech_client = None
+        self.recognizer_path = None
+        self.llm = None
+        self._init_gcp_clients()
         
         # Search Tool
         try:
@@ -120,6 +124,31 @@ class AmirlanVoicebot:
         self.consecutive_unclear_count = 0
         self.session_turn_count = 0
         self.request_timestamps = []
+
+    def _init_gcp_clients(self):
+        """Initializes SpeechClient and Vertex AI LLM with graceful credential fallback."""
+        if not self.speech_client:
+            try:
+                self.speech_client = speech.SpeechClient(
+                    client_options=ClientOptions(api_endpoint=f"{self.stt_location}-speech.googleapis.com")
+                )
+                self.recognizer_path = self.speech_client.recognizer_path(self.project_id, self.stt_location, "_")
+            except Exception as e:
+                print(f"* Notice: Google Cloud SpeechClient initialization deferred: {e}")
+                self.speech_client = None
+                self.recognizer_path = None
+
+        if not self.llm:
+            try:
+                self.llm = ChatVertexAI(
+                    model="gemini-2.5-flash",
+                    project=self.project_id,
+                    location=self.gcp_location,
+                    temperature=0.2
+                )
+            except Exception as e:
+                print(f"* Notice: Vertex AI Gemini LLM initialization deferred: {e}")
+                self.llm = None
 
     def log_event(self, stage: str, message: str, level: str = "INFO", meta: Optional[Dict[str, Any]] = None):
         """Records structured telemetry logs for Developer Mode monitoring."""
@@ -183,6 +212,11 @@ class AmirlanVoicebot:
 
     def transcribe_audio_chirp3(self, audio_bytes: bytes) -> str:
         """Transcribes Mongolian speech audio into text using Google Cloud Chirp 3."""
+        if not self.speech_client:
+            self._init_gcp_clients()
+        if not self.speech_client or not self.recognizer_path:
+            raise RuntimeError("Google Cloud SpeechClient is not initialized. Please verify GCP credentials.")
+
         config = speech.RecognitionConfig(
             auto_decoding_config=speech.AutoDetectDecodingConfig(),
             language_codes=["mn-MN"],
@@ -379,7 +413,12 @@ class AmirlanVoicebot:
 
 ЗӨВХӨН JSON форматаар хариул. Тайлбар бичихгүй."""
 
+        if not self.llm:
+            self._init_gcp_clients()
+
         try:
+            if not self.llm:
+                raise RuntimeError("LLM not initialized")
             res = self.llm.invoke(prompt)
             content = res.content.strip()
             # Clean markdown json code blocks if present
@@ -527,7 +566,12 @@ class AmirlanVoicebot:
     "reason": "Шийдвэрийн шалтгаан (Монголоор 1 өгүүлбэр)"
 }}"""
 
+        if not self.llm:
+            self._init_gcp_clients()
+
         try:
+            if not self.llm:
+                raise RuntimeError("LLM not initialized")
             res = self.llm.invoke(prompt)
             content = res.content.strip()
             if content.startswith("```"):
@@ -579,7 +623,12 @@ class AmirlanVoicebot:
             ))
         ]
 
+        if not self.llm:
+            self._init_gcp_clients()
+
         try:
+            if not self.llm:
+                raise RuntimeError("LLM not initialized")
             res = self.llm.invoke(messages)
             clean_text = res.content.strip()
             # Remove markdown headers and bullets for natural audio reading

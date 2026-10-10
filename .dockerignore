@@ -1,0 +1,42 @@
+# Git & GitHub
+.git
+.gitignore
+.github
+
+# Python bytecode & cache
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache
+.ipynb_checkpoints
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+
+# Environment Variables & Secrets
+.env
+*.env
+application_default_credentials.json
+
+# Local audio recordings & cached outputs (keeps build context slim)
+input-audio/*.wav
+input-audio/*.webm
+input-audio/*.ogg
+output-audio/*.m4a
+output-audio/*.wav
+
+# Notebooks & Documentation assets
+notebooks/
+*.png
+*.jpg
+*.jpeg
+
+# IDE & OS Metadata
+.vscode/
+.idea/
+.DS_Store
+*.tmp
