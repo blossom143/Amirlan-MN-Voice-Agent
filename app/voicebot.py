@@ -147,7 +147,7 @@ class AmirlanVoicebot:
         self.DEFAULT_SYSTEM_PROMPT = SYSTEM_INSTRUCTION_PROMPT
         self.system_prompt = SYSTEM_INSTRUCTION_PROMPT
         self.system_prompt_template = SYSTEM_INSTRUCTION_PROMPT
-        self.caching_enabled = True
+        self.caching_enabled = False
         self.request_history = []
         self.system_logs = []
         self.latest_evaluations = None
@@ -368,7 +368,7 @@ class AmirlanVoicebot:
         cleared = 0
         if os.path.exists(self.output_dir):
             for f in os.listdir(self.output_dir):
-                if f.startswith("amirlan_cache_"):
+                if f.startswith("amirlan_cache_") or f.startswith("amirlan_frequent_") or f.startswith("amirlan_session_"):
                     p = os.path.join(self.output_dir, f)
                     try:
                         os.remove(p)
