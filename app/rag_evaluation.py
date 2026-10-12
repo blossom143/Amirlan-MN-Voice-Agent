@@ -215,7 +215,6 @@ class RAGTriadEvaluator:
             else:
                 # Grounded baseline response
                 response_text = (
-                    f"Эрхэм харилцагч танд энэ өдрийн мэнд хүргэе. "
                     f"{case['ground_truth']} Дэлгэрэнгүйг 1800-1917 лавлахаас тодруулна уу."
                 )
 
