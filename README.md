@@ -73,7 +73,8 @@ self.llm = ChatVertexAI(
     project=self.project_id,
     location=self.gcp_location,
     temperature=0.0,
-    max_output_tokens=140
+    max_output_tokens=1000,
+    thinking_budget=0
 )
 
 # Supported Mongolian voice personas: "Ankhmaa" (Female) or "Ganbaatar" (Male)

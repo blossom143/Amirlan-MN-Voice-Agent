@@ -322,7 +322,8 @@ class AmirlanVoicebot:
                     "project": self.project_id,
                     "location": self.gcp_location,
                     "temperature": 0.0,
-                    "max_output_tokens": 140
+                    "max_output_tokens": 1000,
+                    "thinking_budget": 0
                 }
                 if creds:
                     llm_kwargs["credentials"] = creds
@@ -845,7 +846,11 @@ class AmirlanVoicebot:
             resp_text = re.sub(r"[#*_\-`]", " ", resp_text)
             resp_text = re.sub(r"\s+", " ", resp_text).strip()
             return decision, resp_text
-        except Exception:
+        except Exception as e:
+            print(f"* Notice: Error during LLM reasoning or JSON parse: {e}")
+            if 'content' in locals():
+                print(f"* Raw LLM output was: {content!r}")
+            self.log_event("Workflow", f"LLM parsing fallback triggered: {e}", "WARNING")
             decision = {
                 "decision": "answer",
                 "reason": "Хаан Банкны баталгаат сангийн лавлахаар хариуллаа.",
