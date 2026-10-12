@@ -1,6 +1,81 @@
 # Amirlan [Speech-to-Speech Voicebot Agent]
 https://amirlan.onrender.com/
 
+## System Architecture & Workflows
+
+### 1. Continuous Real-Time Voice Call Workflow (Client VAD + Barge-In)
+
+```mermaid
+flowchart TD
+    StartCall["User Clicks 'Start Voice Call'"] --> InitMic["Initialize Microphone Stream\n(navigator.mediaDevices.getUserMedia)"]
+    InitMic --> InitVAD["Initialize Web Audio API\nAudioContext + AnalyserNode (FFT 256)"]
+    InitVAD --> CallHUD["Display Live Call HUD Banner\nSwitch Primary Button to 'End call'"]
+    CallHUD --> VADLoop["VAD Event Loop (requestAnimationFrame)\nCalculates Real-Time RMS Energy"]
+
+    VADLoop --> RMSCheck{"RMS > 0.026 for >= 3 frames?"}
+    RMSCheck -- "No (Ambient Silence)" --> VADLoop
+    RMSCheck -- "Yes (User Speaking)" --> BargeCheck{"Is Assistant Audio Playing?"}
+
+    BargeCheck -- "Yes" --> BargeIn["⚡ Barge-In Interruption\nPause & Reset Playback to 0s"]
+    BargeCheck -- "No" --> RecordSpeech["Record Speech Chunks\nMediaRecorder (Opus / WebM / MP4)"]
+    BargeIn --> RecordSpeech
+
+    RecordSpeech --> SilenceCheck{"Silence > 1350ms\n& Speech >= 500ms?"}
+    SilenceCheck -- "No" --> RecordSpeech
+    SilenceCheck -- "Yes" --> DispatchTurn["Dispatch Turn to Backend\nPOST /api/voice/process (is_call_mode: true)"]
+
+    DispatchTurn --> BackendProc["Backend 6-Stage ReAct Pipeline\n(Chirp 3 -> Gemini 2.5 -> Narakeet)"]
+    BackendProc --> ReceiveAudio["Receive Synthesized Audio URL (.m4a)\nAppend User Transcript & Assistant Bubble"]
+    ReceiveAudio --> PlayAudio["Autoplay Assistant Audio Response"]
+    PlayAudio --> ListenEnd["Listen for audio.onended Event"]
+    ListenEnd --> AutoRearm["🔄 Auto-Rearm Call Loop\nStatus: 'Call Active • Listening (Speak anytime)'"]
+    AutoRearm --> VADLoop
+
+    EndTrigger["Hang Up Action\n('End call' button / HUD / Orb / Escape)"] -.-> StopCall["stopVoiceCall()\nReleases Mic, Halts AudioContext & VAD Loop\nResets Button to 'Start Voice Call'"]
+```
+
+### 2. Backend 6-Stage ReAct Loop & Knowledge Grounding Pipeline
+
+```mermaid
+flowchart LR
+    subgraph S1["Stage 1: Speech Intake (STT)"]
+        AudioIn["Audio Payload (.webm / .mp4)"] --> STT["Google Cloud Speech-to-Text v2\nChirp 3 Neural Model (mn-MN)"]
+        STT --> Breaker{"Consecutive Unclear\nCircuit Breaker"}
+        Breaker -- ">= 3 times" --> EscCircuit["Trip Human Escalation"]
+        Breaker -- "Transcribed" --> Transcript["Transcript Text (mn-MN)"]
+    end
+
+    subgraph S2["Stage 2: Intent Classification"]
+        Transcript --> IntentClassifier["Gemini 2.5 Flash Classifier\nDeposit | Loan | Card | App | Transfer"]
+        IntentClassifier --> IntentMeta["Intent Category & Confidence Score"]
+    end
+
+    subgraph S3["Stage 3: Hybrid Knowledge Retrieval (RAG)"]
+        IntentMeta --> Retriever["Hybrid Retriever (< 1ms)\nFAISS Cosine Similarity + BM25"]
+        KB[("Knowledge Base\napp/knowledge_base/*.md\n01_deposits, 02_mortgage, etc.")] --> Retriever
+        Retriever --> Context["Ranked Top Chunks & Official URLs"]
+    end
+
+    subgraph S4["Stage 4: ReAct Reasoning & Grounding"]
+        Context --> ReActLoop["Gemini 2.5 Flash ReAct Engine\nThought -> Action -> Observation"]
+        ReActLoop --> EvalDecision{"Completeness & Safety Check\nRequires Live Agent?"}
+    end
+
+    subgraph S5["Stage 5: Neural TTS Response"]
+        EvalDecision -- "Answerable & Grounded" --> CleanText["Formulate Spoken Response\n(No repetitive boilerplate)"]
+        CleanText --> TTS["Narakeet Neural TTS API\nPersona: Ankhmaa or Ganbaatar"]
+        TTS --> AudioFile["Generated Audio (.m4a)"]
+    end
+
+    subgraph S6["Stage 6: Human Escalation"]
+        EvalDecision -- "Human Transfer Needed" --> EscProtocol["Escalation Protocol\nPriority Routing"]
+        EscCircuit --> EscProtocol
+        EscProtocol --> HotLine["24/7 Contact Center 1800-1917\nInternational: +976 7515-1917"]
+    end
+
+    AudioFile --> FinalResponse["Return JSON Payload\n(transcript, response_text, audio_url, stage_logs)"]
+    HotLine --> FinalResponse
+```
 
 ## Setup
 
