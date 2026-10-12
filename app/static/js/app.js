@@ -36,6 +36,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const bargeInTag = document.getElementById("bargeInTag");
     const vadStatusPill = document.getElementById("vadStatusPill");
     const mainRecordIcon = document.getElementById("mainRecordIcon");
+    const callHudEndBtn = document.getElementById("callHudEndBtn");
 
     // Stepper & Live Timers
     const totalTimeBadge = document.getElementById("totalTimeBadge");
@@ -114,7 +115,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function updateCallIcon(isInCall) {
         if (!mainRecordIcon) return;
         if (isInCall) {
-            mainRecordIcon.innerHTML = `<path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91" /><line x1="1" y1="1" x2="23" y2="23" />`;
+            mainRecordIcon.innerHTML = `<path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08c-.18-.17-.29-.42-.29-.7 0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11-.53-.29-.71l-2.48-2.48c-.18-.18-.43-.29-.71-.29-.27 0-.52.1-.7.28-.79-.74-1.69-1.36-2.67-1.85-.33-.16-.56-.5-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z" fill="currentColor"/>`;
         } else {
             mainRecordIcon.innerHTML = `<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />`;
         }
@@ -157,18 +158,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (mode === "call") {
             if (isCallActive) {
-                recordBtnLabel.textContent = "End Voice Call";
+                recordBtnLabel.textContent = "End call";
+                mainRecordBtn.classList.remove("btn-call-start");
                 mainRecordBtn.classList.add("btn-end-call");
                 updateCallIcon(true);
             } else {
                 recordBtnLabel.textContent = "Start Voice Call";
+                mainRecordBtn.classList.remove("btn-end-call");
                 mainRecordBtn.classList.add("btn-call-start");
                 updateCallIcon(false);
                 setOrbState("", "Ready to Call");
             }
         } else if (mode === "browser") {
-            recordBtnLabel.textContent = isRecording ? "Stop Recording" : "Start Voice Recording";
-            updateMicIcon();
+            recordBtnLabel.textContent = isRecording ? "End call" : "Start Voice Recording";
+            if (isRecording) {
+                mainRecordBtn.classList.add("recording", "btn-end-call");
+                updateCallIcon(true);
+            } else {
+                updateMicIcon();
+            }
         } else if (mode === "desktop") {
             recordBtnLabel.textContent = "Hardware Mic (5s)";
             updateMicIcon();
@@ -445,7 +453,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             mainRecordBtn.classList.remove("btn-call-start");
             mainRecordBtn.classList.add("btn-end-call");
-            recordBtnLabel.textContent = "End Voice Call";
+            recordBtnLabel.textContent = "End call";
             updateCallIcon(true);
 
             // Connect canvas visualizer to live vadStream
@@ -631,6 +639,10 @@ document.addEventListener("DOMContentLoaded", () => {
                         console.log("Assistant turn complete -> Call re-armed for user voice.");
                         setOrbState("listening", "Call Active • Listening (Speak anytime)");
                         if (callVadStatus) callVadStatus.textContent = "Listening • Speak anytime";
+                        recordBtnLabel.textContent = "End call";
+                        mainRecordBtn.classList.remove("btn-call-start");
+                        mainRecordBtn.classList.add("btn-end-call");
+                        updateCallIcon(true);
                     }
                 };
                 latestAudio.addEventListener("ended", rearmCall, { once: true });
@@ -638,6 +650,10 @@ document.addEventListener("DOMContentLoaded", () => {
             } else {
                 setOrbState("listening", "Call Active • Listening (Speak anytime)");
                 if (callVadStatus) callVadStatus.textContent = "Listening • Speak anytime";
+                recordBtnLabel.textContent = "End call";
+                mainRecordBtn.classList.remove("btn-call-start");
+                mainRecordBtn.classList.add("btn-end-call");
+                updateCallIcon(true);
             }
 
         } catch (err) {
@@ -648,6 +664,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 appendAssistantMessage("Network error during call: " + err.message);
                 setOrbState("listening", "Call Active • Listening (Speak anytime)");
                 if (callVadStatus) callVadStatus.textContent = "Listening • Speak anytime";
+                recordBtnLabel.textContent = "End call";
+                mainRecordBtn.classList.remove("btn-call-start");
+                mainRecordBtn.classList.add("btn-end-call");
+                updateCallIcon(true);
             }
         }
     }
@@ -689,8 +709,9 @@ document.addEventListener("DOMContentLoaded", () => {
             isRecording = true;
 
             setOrbState("listening", "Listening • Speak now...");
-            mainRecordBtn.classList.add("recording");
-            recordBtnLabel.textContent = "Stop Recording";
+            mainRecordBtn.classList.add("recording", "btn-end-call");
+            recordBtnLabel.textContent = "End call";
+            updateCallIcon(true);
 
             initVisualizer(micStream);
             startRecTimer();
@@ -708,7 +729,7 @@ document.addEventListener("DOMContentLoaded", () => {
             isRecording = false;
             stopRecTimer();
             setOrbState("analyzing", "Transcribing & Reasoning (Chirp 3 • Gemini)...");
-            mainRecordBtn.classList.remove("recording");
+            mainRecordBtn.classList.remove("recording", "btn-end-call");
             recordBtnLabel.textContent = "Processing...";
         }
     }
@@ -759,8 +780,25 @@ document.addEventListener("DOMContentLoaded", () => {
             stopPipelineTimers();
             appendUserMessage("[Voice Input]");
             appendAssistantMessage("Network error occurred: " + err.message);
-            setOrbState("", "Ready to Listen");
-            recordBtnLabel.textContent = "Start Voice Recording";
+            if (isCallActive) {
+                setOrbState("listening", "Call Active • Speak anytime");
+                if (callVadStatus) callVadStatus.textContent = "Listening • Speak anytime";
+                recordBtnLabel.textContent = "End call";
+                mainRecordBtn.classList.remove("btn-call-start");
+                mainRecordBtn.classList.add("btn-end-call");
+                updateCallIcon(true);
+            } else if (currentInputMode === "call") {
+                recordBtnLabel.textContent = "Start Voice Call";
+                mainRecordBtn.classList.remove("btn-end-call");
+                mainRecordBtn.classList.add("btn-call-start");
+                updateCallIcon(false);
+                setOrbState("", "Ready to Call");
+            } else {
+                recordBtnLabel.textContent = "Start Voice Recording";
+                mainRecordBtn.classList.remove("recording", "btn-end-call");
+                updateMicIcon();
+                setOrbState("", "Ready to Listen");
+            }
         }
     }
 
@@ -872,12 +910,33 @@ document.addEventListener("DOMContentLoaded", () => {
     // 7. PIPELINE RESPONSE HANDLER
     // =========================================================================
     function handlePipelineResponse(data) {
-        recordBtnLabel.textContent = "Start Voice Recording";
+        if (isCallActive) {
+            recordBtnLabel.textContent = "End call";
+            mainRecordBtn.classList.remove("btn-call-start");
+            mainRecordBtn.classList.add("btn-end-call");
+            updateCallIcon(true);
+        } else if (currentInputMode === "call") {
+            recordBtnLabel.textContent = "Start Voice Call";
+            mainRecordBtn.classList.remove("btn-end-call");
+            mainRecordBtn.classList.add("btn-call-start");
+            updateCallIcon(false);
+        } else if (currentInputMode === "browser") {
+            recordBtnLabel.textContent = "Start Voice Recording";
+            mainRecordBtn.classList.remove("recording", "btn-end-call");
+            updateMicIcon();
+        } else {
+            recordBtnLabel.textContent = "Start Voice Recording";
+        }
 
         if (!data.success) {
             stopPipelineTimers();
             appendAssistantMessage("Error: " + (data.error || "Unknown pipeline error"));
-            setOrbState("", "Ready to Listen");
+            if (isCallActive) {
+                setOrbState("listening", "Call Active • Speak anytime");
+                if (callVadStatus) callVadStatus.textContent = "Listening • Speak anytime";
+            } else {
+                setOrbState("", "Ready to Listen");
+            }
             return;
         }
 
@@ -911,7 +970,10 @@ document.addEventListener("DOMContentLoaded", () => {
         if (data.audio_url) {
             autoplayNewestAudio(data.audio_url);
         } else {
-            if (!data.is_escalated) {
+            if (isCallActive) {
+                setOrbState("listening", "Call Active • Speak anytime");
+                if (callVadStatus) callVadStatus.textContent = "Listening • Speak anytime";
+            } else if (!data.is_escalated) {
                 setOrbState("", "Ready to Listen");
             }
         }
@@ -1583,12 +1645,12 @@ document.addEventListener("DOMContentLoaded", () => {
     // Record / Submit Button Listeners
     if (mainRecordBtn) {
         mainRecordBtn.addEventListener("click", () => {
+            if (isCallActive) {
+                stopVoiceCall();
+                return;
+            }
             if (currentInputMode === "call") {
-                if (isCallActive) {
-                    stopVoiceCall();
-                } else {
-                    startVoiceCall();
-                }
+                startVoiceCall();
             } else if (currentInputMode === "browser") {
                 if (isRecording) {
                     stopBrowserRecording();
@@ -1608,6 +1670,19 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         });
     }
+
+    if (callHudEndBtn) {
+        callHudEndBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            stopVoiceCall();
+        });
+    }
+
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && isCallActive) {
+            stopVoiceCall();
+        }
+    });
 
     if (orbWrapper) {
         orbWrapper.addEventListener("click", () => {
