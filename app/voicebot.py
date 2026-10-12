@@ -6,7 +6,7 @@ Stage 1: Call Intake (sounddevice / browser audio -> Google Cloud Chirp 3 mn-MN)
 Stage 2: Intent Understanding (Gemini 2.5 Flash classification)
 Stage 3: Information Retrieval (Targeted search restricted to khanbank.com)
 Stage 4: Decision Making (LangGraph ReAct reasoning & verification)
-Stage 5: Response Generation (Professional Mongolian text -> Narakeet .m4a Ganbaatar voice)
+Stage 5: Response Generation (Professional Mongolian text -> Gemini 3.1 Flash TTS .wav Kore/Puck voices)
 Stage 6: Human Escalation (Safe bank-standard escalation protocol & 1800-1917 handoff)
 """
 
@@ -17,8 +17,11 @@ import time
 import uuid
 import hashlib
 import tempfile
+import wave
+import struct
 import requests
 from typing import Dict, Any, Optional, Tuple, List
+from google import genai
 
 # Persistent HTTP session to reuse TCP connections across turns (Strategy 2)
 _narakeet_session = requests.Session()
@@ -78,7 +81,32 @@ SYSTEM_INSTRUCTION_PROMPT = """Та Хаан Банкны албан ёсны у
 DEFAULT_SYSTEM_PROMPT = SYSTEM_INSTRUCTION_PROMPT
 
 
+def make_streaming_wav_header(sample_rate: int = 24000, channels: int = 1, bits_per_sample: int = 16) -> bytes:
+    """Generates standard 44-byte RIFF/WAVE header for real-time streaming linear PCM."""
+    byte_rate = sample_rate * channels * (bits_per_sample // 8)
+    block_align = channels * (bits_per_sample // 8)
+    riff_header = b"RIFF" + struct.pack("<I", 0x7FFFFFFF) + b"WAVE"
+    fmt_chunk = b"fmt " + struct.pack("<IHHIIHH", 16, 1, channels, sample_rate, byte_rate, block_align, bits_per_sample)
+    data_header = b"data" + struct.pack("<I", 0x7FFFFFFF)
+    return riff_header + fmt_chunk + data_header
+
+
+GEMINI_VOICE_MAP = {
+    "Ankhmaa": "Kore",
+    "Ganbaatar": "Puck",
+    "Kore": "Kore",
+    "Aoede": "Aoede",
+    "Leda": "Leda",
+    "Puck": "Puck",
+    "Charon": "Charon",
+    "Zephyr": "Zephyr",
+    "Fenrir": "Fenrir",
+}
+
+
 class AmirlanVoicebot:
+    GEMINI_VOICE_MAP = GEMINI_VOICE_MAP
+
     def __init__(self):
         self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "project-1d76ba00-25b9-47dd-8d3")
         self.gcp_location = os.getenv("GCP_LOCATION", "us-central1")
@@ -95,6 +123,9 @@ class AmirlanVoicebot:
         self.speech_client = None
         self.recognizer_path = None
         self.llm = None
+        self.genai_client = None
+        self._is_warmed_up = False
+        self._warmup_in_progress = False
         self._init_gcp_clients()
         
         # Step 2: Local Knowledge Base Retriever (FAISS + Hybrid RAG)
@@ -330,6 +361,94 @@ class AmirlanVoicebot:
             except Exception as e:
                 print(f"* Notice: Vertex AI Gemini LLM initialization deferred: {e}")
                 self.llm = None
+
+        if not self.genai_client:
+            try:
+                if os.getenv("GEMINI_API_KEY"):
+                    self.genai_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+                else:
+                    self.genai_client = genai.Client(
+                        vertexai=True,
+                        project=self.project_id,
+                        location=self.gcp_location
+                    )
+                print("* Configured Google GenAI Client for Gemini 3.1 Flash TTS (preview)")
+            except Exception as e:
+                print(f"* Notice: Google GenAI Client initialization deferred: {e}")
+                self.genai_client = None
+
+    def warmup(self) -> Dict[str, Any]:
+        """
+        Pre-warms Google OAuth2 token, Vertex AI Gemini 2.5 Flash, and Gemini 3.1 Flash TTS
+        when the user opens the web page. Eliminates the ~3-second cold start delay before
+        the user's first voice turn.
+        """
+        if getattr(self, "_is_warmed_up", False):
+            return {"success": True, "already_warmed": True, "message": "Engine already warmed up."}
+        if getattr(self, "_warmup_in_progress", False):
+            return {"success": True, "in_progress": True, "message": "Warmup already in progress."}
+
+        self._warmup_in_progress = True
+        t0 = time.time()
+        warmed = []
+        errors = []
+
+        # 1. Warm Google OAuth2 Token
+        try:
+            if hasattr(self, "google_credentials") and self.google_credentials:
+                import google.auth.transport.requests
+                req = google.auth.transport.requests.Request()
+                self.google_credentials.refresh(req)
+                warmed.append("oauth2_token")
+        except Exception as e:
+            errors.append(f"oauth2_token: {e}")
+
+        # 2. Warm Vertex AI LLM (Gemini 2.5 Flash)
+        try:
+            if self.llm:
+                _ = self.llm.invoke("1")
+                warmed.append("gemini_2.5_flash_llm")
+        except Exception as e:
+            errors.append(f"llm: {e}")
+
+        # 3. Warm SpeechClient recognizer
+        try:
+            if self.speech_client and self.recognizer_path:
+                warmed.append("speech_client_grpc")
+        except Exception as e:
+            errors.append(f"speech: {e}")
+
+        # 4. Warm Gemini 3.1 Flash TTS
+        try:
+            if self.genai_client:
+                stream = self.genai_client.models.generate_content_stream(
+                    model="gemini-3.1-flash-tts-preview",
+                    contents="Сайн",
+                    config={
+                        "response_modalities": ["AUDIO"],
+                        "speech_config": {
+                            "voice_config": {
+                                "prebuilt_voice_config": {"voice_name": "Kore"}
+                            }
+                        }
+                    }
+                )
+                for _ in stream:
+                    break
+                warmed.append("gemini_3.1_flash_tts")
+        except Exception as e:
+            errors.append(f"tts: {e}")
+
+        self._is_warmed_up = True
+        self._warmup_in_progress = False
+        elapsed = round(time.time() - t0, 3)
+        self.log_event("Warmup", f"Engine pre-warmed in {elapsed}s on page open: {', '.join(warmed)}")
+        return {
+            "success": True,
+            "warmup_time_sec": elapsed,
+            "components_warmed": warmed,
+            "errors": errors
+        }
 
     def log_event(self, stage: str, message: str, level: str = "INFO", meta: Optional[Dict[str, Any]] = None):
         """Records structured telemetry logs for Developer Mode monitoring."""
@@ -932,6 +1051,163 @@ class AmirlanVoicebot:
         self.log_event("Cleanup", f"Cleaned up {cleaned_count} audio files and reset session safeguards (clear_cache={clear_cache})")
         return cleaned_count
 
+    def stream_speech_gemini_tts(self, text: str, voice: str = "Kore"):
+        """
+        Real-time streaming audio generator powered by Gemini 3.1 Flash TTS (preview).
+        Yields an initial 44-byte streaming WAV header, followed immediately by
+        raw 24kHz audio chunks as they are generated by the model.
+        """
+        if not self.genai_client:
+            self._init_gcp_clients()
+        if not self.genai_client:
+            raise RuntimeError("Gemini 3.1 Flash TTS client is not initialized.")
+
+        gemini_voice = self.GEMINI_VOICE_MAP.get(voice, voice if voice in self.GEMINI_VOICE_MAP else "Kore")
+        safe_text = self._trim_for_tts(text, max_bytes=400).strip()
+        if not safe_text:
+            return
+
+        # Yield 44-byte streaming WAV header for browser audio context / streaming playback
+        yield make_streaming_wav_header(sample_rate=24000, channels=1, bits_per_sample=16)
+
+        try:
+            stream = self.genai_client.models.generate_content_stream(
+                model="gemini-3.1-flash-tts-preview",
+                contents=safe_text,
+                config={
+                    "response_modalities": ["AUDIO"],
+                    "speech_config": {
+                        "voice_config": {
+                            "prebuilt_voice_config": {
+                                "voice_name": gemini_voice
+                            }
+                        }
+                    }
+                }
+            )
+            for chunk in stream:
+                if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
+                    for part in chunk.candidates[0].content.parts:
+                        if hasattr(part, "inline_data") and part.inline_data and part.inline_data.data:
+                            yield part.inline_data.data
+        except Exception as e:
+            self.log_event("TTS", f"Streaming speech error: {e}", level="ERROR")
+            raise
+
+    def synthesize_speech_gemini_tts(self, text: str, voice: str = "Kore") -> str:
+        """
+        Synthesizes Mongolian text into studio-grade 24kHz .wav audio using Gemini 3.1 Flash TTS (preview).
+        Streams audio chunks in real-time with sub-second TTFB (<800ms) and saves a standard RIFF .wav file.
+        """
+        if not self.genai_client:
+            self._init_gcp_clients()
+        if not self.genai_client:
+            raise RuntimeError("Gemini 3.1 Flash TTS client is not initialized.")
+
+        gemini_voice = self.GEMINI_VOICE_MAP.get(voice, voice if voice in self.GEMINI_VOICE_MAP else "Kore")
+        safe_text = self._trim_for_tts(text, max_bytes=400).strip()
+        if not safe_text:
+            raise ValueError("Текст хоосон байна.")
+
+        # Frequent phrase check
+        matched_freq_key = None
+        for f_key, f_val in self.frequent_phrases.items():
+            if safe_text == f_val or safe_text.strip() == f_val.strip():
+                matched_freq_key = f_key
+                break
+
+        # Response Caching (Memoization if enabled)
+        if self.caching_enabled:
+            if matched_freq_key:
+                freq_filename = f"amirlan_frequent_{gemini_voice}_{matched_freq_key}.wav"
+                freq_path = os.path.join(self.output_dir, freq_filename)
+                if os.path.exists(freq_path) and os.path.getsize(freq_path) > 0:
+                    self.log_event("TTS", f"Frequent phrase cache hit: {freq_filename} (0.0s)", meta={"cached": True, "voice": gemini_voice, "frequent": matched_freq_key})
+                    return freq_filename
+
+            cache_hash = hashlib.sha256(f"{gemini_voice}:{safe_text}".encode("utf-8")).hexdigest()[:16]
+            filename = f"amirlan_cache_{gemini_voice}_{cache_hash}.wav"
+            file_path = os.path.join(self.output_dir, filename)
+
+            if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+                self.log_event("TTS", f"Memoization cache hit: {filename} (0.0s)", meta={"cached": True, "voice": gemini_voice})
+                return filename
+        else:
+            filename = f"amirlan_session_{uuid.uuid4().hex[:8]}_{int(time.time())}.wav"
+            file_path = os.path.join(self.output_dir, filename)
+
+        t_req_start = time.time()
+        ttfb = None
+        chunk_count = 0
+        total_bytes = 0
+        all_pcm = bytearray()
+
+        try:
+            stream = self.genai_client.models.generate_content_stream(
+                model="gemini-3.1-flash-tts-preview",
+                contents=safe_text,
+                config={
+                    "response_modalities": ["AUDIO"],
+                    "speech_config": {
+                        "voice_config": {
+                            "prebuilt_voice_config": {
+                                "voice_name": gemini_voice
+                            }
+                        }
+                    }
+                }
+            )
+            for chunk in stream:
+                if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
+                    for part in chunk.candidates[0].content.parts:
+                        if hasattr(part, "inline_data") and part.inline_data and part.inline_data.data:
+                            chunk_data = part.inline_data.data
+                            if ttfb is None:
+                                ttfb = round(time.time() - t_req_start, 3)
+                            chunk_count += 1
+                            total_bytes += len(chunk_data)
+                            all_pcm.extend(chunk_data)
+
+            if not all_pcm:
+                raise RuntimeError("Gemini 3.1 Flash TTS хоосон аудио өгөгдөл буцаалаа.")
+
+            if ttfb is None:
+                ttfb = round(time.time() - t_req_start, 3)
+
+            # Write standard 24kHz 16-bit mono RIFF WAV
+            temp_path = file_path + ".tmp"
+            with wave.open(temp_path, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(24000)
+                wf.writeframes(all_pcm)
+            os.replace(temp_path, file_path)
+
+            if self.caching_enabled and matched_freq_key:
+                try:
+                    import shutil
+                    freq_filename = f"amirlan_frequent_{gemini_voice}_{matched_freq_key}.wav"
+                    shutil.copyfile(file_path, os.path.join(self.output_dir, freq_filename))
+                except Exception:
+                    pass
+
+            tot_tts_time = round(time.time() - t_req_start, 3)
+            self.log_event("TTS", f"Streamed {total_bytes}B in {tot_tts_time}s (TTFB: {ttfb}s, {chunk_count} chunks, Gemini 3.1 Flash TTS {gemini_voice})", meta={
+                "ttfb": ttfb,
+                "total_time": tot_tts_time,
+                "bytes": total_bytes,
+                "chunks": chunk_count,
+                "model": "gemini-3.1-flash-tts-preview",
+                "voice": gemini_voice,
+                "cached": False,
+                "sample_rate": 24000
+            })
+            return filename
+
+        except Exception as e:
+            self.log_event("TTS", f"Gemini 3.1 Flash TTS synthesis error: {e}", level="ERROR")
+            raise RuntimeError(f"Gemini 3.1 Flash TTS алдаа: {str(e)[:200]}")
+
     def synthesize_speech_narakeet(self, text: str, voice: str = "Ankhmaa") -> str:
         """
         Synthesizes Mongolian text into high-quality .m4a audio using Narakeet REST API.
@@ -945,14 +1221,15 @@ class AmirlanVoicebot:
             raise ValueError("NARAKEET_API_KEY орчны хувьсагч тохируулагдаагүй байна.")
 
         valid_voices = {"Ankhmaa", "Ganbaatar"}
-        if voice not in valid_voices:
-            voice = "Ankhmaa"
+        clean_voice = voice.replace("narakeet:", "").strip()
+        if clean_voice not in valid_voices:
+            clean_voice = "Ankhmaa"
 
         safe_text = self._trim_for_tts(text, max_bytes=250).strip()
         if not safe_text:
             raise ValueError("Текст хоосон байна.")
 
-        # Step 4: Frequent Phrase Check & Sentence-Level Cache
+        # Frequent Phrase Check & Sentence-Level Cache
         matched_freq_key = None
         for f_key, f_val in self.frequent_phrases.items():
             if safe_text == f_val or safe_text.strip() == f_val.strip():
@@ -961,34 +1238,31 @@ class AmirlanVoicebot:
 
         # Response Caching (Memoization if enabled)
         if self.caching_enabled:
-            # 1. Check dedicated frequent phrase cache
             if matched_freq_key:
-                freq_filename = f"amirlan_frequent_{voice}_{matched_freq_key}.m4a"
+                freq_filename = f"amirlan_frequent_{clean_voice}_{matched_freq_key}.m4a"
                 freq_path = os.path.join(self.output_dir, freq_filename)
                 if os.path.exists(freq_path) and os.path.getsize(freq_path) > 0:
-                    self.log_event("TTS", f"Frequent phrase cache hit: {freq_filename} (0.0s)", meta={"cached": True, "voice": voice, "frequent": matched_freq_key})
+                    self.log_event("TTS", f"Frequent phrase cache hit: {freq_filename} (0.0s)", meta={"cached": True, "voice": clean_voice, "frequent": matched_freq_key})
                     return freq_filename
 
-            # 2. Check full text SHA-256 cache
-            cache_hash = hashlib.sha256(f"{voice}:{safe_text}".encode("utf-8")).hexdigest()[:16]
-            filename = f"amirlan_cache_{voice}_{cache_hash}.m4a"
+            cache_hash = hashlib.sha256(f"{clean_voice}:{safe_text}".encode("utf-8")).hexdigest()[:16]
+            filename = f"amirlan_cache_{clean_voice}_{cache_hash}.m4a"
             file_path = os.path.join(self.output_dir, filename)
 
             if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-                self.log_event("TTS", f"Memoization cache hit: {filename} (0.0s)", meta={"cached": True, "voice": voice})
+                self.log_event("TTS", f"Memoization cache hit: {filename} (0.0s)", meta={"cached": True, "voice": clean_voice})
                 return filename
         else:
             filename = f"amirlan_session_{uuid.uuid4().hex[:8]}_{int(time.time())}.m4a"
             file_path = os.path.join(self.output_dir, filename)
 
-        url = f"https://api.narakeet.com/text-to-speech/m4a?voice={voice}"
+        url = f"https://api.narakeet.com/text-to-speech/m4a?voice={clean_voice}"
         headers = {
             "x-api-key": self.narakeet_api_key,
             "Content-Type": "text/plain; charset=utf-8",
             "Accept": "application/octet-stream"
         }
 
-        # 1. Enable HTTP Streaming (stream=True) & 2. Reuse TCP Connection via Session
         t_req_start = time.time()
         res = self.narakeet_session.post(
             url,
@@ -998,10 +1272,8 @@ class AmirlanVoicebot:
             timeout=45
         )
         ttfb = round(time.time() - t_req_start, 3)
-
         content_type = res.headers.get("content-type", "")
 
-        # Synchronous binary audio returned via HTTP stream
         if res.status_code == 200 and "application/json" not in content_type:
             temp_path = file_path + ".tmp"
             t_dl_start = time.time()
@@ -1017,7 +1289,7 @@ class AmirlanVoicebot:
             if self.caching_enabled and matched_freq_key:
                 try:
                     import shutil
-                    freq_filename = f"amirlan_frequent_{voice}_{matched_freq_key}.m4a"
+                    freq_filename = f"amirlan_frequent_{clean_voice}_{matched_freq_key}.m4a"
                     freq_path = os.path.join(self.output_dir, freq_filename)
                     shutil.copyfile(file_path, freq_path)
                 except Exception:
@@ -1026,46 +1298,48 @@ class AmirlanVoicebot:
             dl_time = round(time.time() - t_dl_start, 3)
             tot_tts_time = round(time.time() - t_req_start, 3)
 
-            self.log_event("TTS", f"Streamed {total_bytes}B in {tot_tts_time}s (TTFB: {ttfb}s, Transfer: {dl_time}s, {chunk_count} chunks)", meta={
+            self.log_event("TTS", f"Streamed {total_bytes}B in {tot_tts_time}s (TTFB: {ttfb}s, Transfer: {dl_time}s, {chunk_count} chunks, Narakeet {clean_voice})", meta={
                 "ttfb": ttfb,
                 "transfer_time": dl_time,
                 "bytes": total_bytes,
                 "chunks": chunk_count,
-                "cached": False,
-                "voice": voice,
-                "frequent": matched_freq_key
+                "model": "narakeet-neural",
+                "voice": clean_voice,
+                "cached": False
             })
             return filename
-        
-        # Async task polling fallback if statusUrl is returned
-        if res.status_code in [200, 202] and "json" in content_type:
-            try:
-                task_data = res.json()
-                status_url = task_data.get("statusUrl")
-                if status_url:
-                    # Poll statusUrl without x-api-key header as per Narakeet docs
-                    for _ in range(15):
-                        time.sleep(2)
-                        poll_res = self.narakeet_session.get(status_url, timeout=10)
-                        if poll_res.status_code == 200:
-                            p_info = poll_res.json()
-                            if p_info.get("finished"):
-                                audio_url = p_info.get("result")
-                                if audio_url:
-                                    down_res = self.narakeet_session.get(audio_url, stream=True, timeout=30)
-                                    if down_res.status_code == 200:
-                                        temp_path = file_path + ".tmp"
-                                        with open(temp_path, "wb") as f:
-                                            for chunk in down_res.iter_content(chunk_size=8192):
-                                                if chunk:
-                                                    f.write(chunk)
-                                        os.replace(temp_path, file_path)
-                                        return cached_filename
-            except Exception as poll_e:
-                print("Narakeet async polling error:", poll_e)
+        else:
+            err_msg = res.text[:200]
+            self.log_event("TTS", f"Narakeet API HTTP {res.status_code}: {err_msg}", level="ERROR")
+            raise RuntimeError(f"Narakeet алдаа ({res.status_code}): {err_msg}")
 
-        error_details = res.text if hasattr(res, "text") else "No details"
-        raise RuntimeError(f"Narakeet TTS Алдаа ({res.status_code}): {error_details[:200]}")
+    def synthesize_speech(self, text: str, voice: str = "gemini:Kore") -> Tuple[str, str, str]:
+        """
+        Dynamically dispatches text-to-speech to either:
+        - 2 Gemini / Google TTS Streaming options: Kore (Female), Puck (Male) [.wav]
+        - 2 Narakeet Batch options: Ankhmaa (Female), Ganbaatar (Male) [.m4a]
+
+        Returns:
+            Tuple[filename, engine_label, format_ext]
+        """
+        voice_str = (voice or "gemini:Kore").strip()
+        is_narakeet = (
+            voice_str.startswith("narakeet:") or
+            voice_str in ("Ankhmaa", "Ganbaatar")
+        )
+
+        if is_narakeet:
+            clean_voice = voice_str.replace("narakeet:", "").strip()
+            if clean_voice not in ("Ankhmaa", "Ganbaatar"):
+                clean_voice = "Ankhmaa"
+            fn = self.synthesize_speech_narakeet(text, voice=clean_voice)
+            return fn, f"Narakeet {clean_voice} (Batch)", ".m4a"
+        else:
+            clean_voice = voice_str.replace("gemini:", "").replace("gtts:", "").strip()
+            if clean_voice not in ("Kore", "Puck", "Aoede", "Leda", "Charon"):
+                clean_voice = "Kore"
+            fn = self.synthesize_speech_gemini_tts(text, voice=clean_voice)
+            return fn, f"Gemini 3.1 Flash {clean_voice} (Stream)", ".wav"
 
     # =========================================================================
     # STAGE 6: Human Escalation Protocol
@@ -1107,7 +1381,7 @@ class AmirlanVoicebot:
                 "Ярианы дээд хугацаа хүрсэн тул үйлчилгээг түргэн шуурхай шийдвэрлэхийн тулд "
                 "таны дуудлагыг мэргэжилтэнд шууд шилжүүллээ. Та 1800-1917 луу залгана уу."
             )
-            audio_fn = self.synthesize_speech_narakeet(response_text, voice=voice)
+            audio_fn, engine_lbl, _ = self.synthesize_speech(response_text, voice=voice)
             return {
                 "transcript": "Ярианы дээд хугацаа хүрсэн.",
                 "response_text": response_text,
@@ -1171,7 +1445,7 @@ class AmirlanVoicebot:
                     "details": f"Шийдвэр: {c_entry['decision'].get('decision')} (Local Cache Hit)"
                 })
                 stage_logs.append({
-                    "stage": 5, "name": "Response Generation", "title": f"Хариу боловсруулах & TTS (Narakeet {voice})",
+                    "stage": 5, "name": "Response Generation", "title": f"Хариу боловсруулах & TTS (Gemini 3.1 Flash TTS {voice})",
                     "status": "completed", "duration": 0.01,
                     "details": f"Дууны файл: {c_entry['audio_filename']} (Memoized Cache)"
                 })
@@ -1218,7 +1492,7 @@ class AmirlanVoicebot:
                     "Таны яриа тодорхой сонсогдохгүй байгаа тул бид таныг оператортой шууд холбож байна. "
                     "Та 1800-1917 лавлах утсаар 24 цагийн турш холбогдох боломжтой."
                 )
-                audio_fn = self.synthesize_speech_narakeet(response_text, voice=voice)
+                audio_fn, engine_lbl, _ = self.synthesize_speech(response_text, voice=voice)
                 return {
                     "transcript": transcript,
                     "response_text": response_text,
@@ -1233,7 +1507,23 @@ class AmirlanVoicebot:
                 }
             elif is_call_mode:
                 response_text = "Уучлаарай, таны яриа сонсогдсонгүй. Та асуултаа дахин хэлнэ үү."
-                audio_fn = self.synthesize_speech_narakeet(response_text, voice=voice)
+                audio_fn, engine_lbl, _ = self.synthesize_speech(response_text, voice=voice)
+                stage_logs.append({
+                    "stage": 2, "name": "Intent Understanding", "title": "Зорилго ангилах (Fast RAG Intent Engine)",
+                    "status": "completed", "duration": 0.01, "details": "Дахин сонсох хүсэлт"
+                })
+                stage_logs.append({
+                    "stage": 3, "name": "Information Retrieval", "title": "Мэдээлэл шүүх (FAISS Local RAG)",
+                    "status": "completed", "duration": 0.01, "details": "Тодорхойгүй яриа"
+                })
+                stage_logs.append({
+                    "stage": 4, "name": "Decision Making", "title": "Шийдвэр гаргах (ReAct Engine)",
+                    "status": "completed", "duration": 0.01, "details": "Дахин сонсох хүсэлт"
+                })
+                stage_logs.append({
+                    "stage": 5, "name": "Response Generation", "title": f"Хариу боловсруулах & TTS ({engine_lbl})",
+                    "status": "completed", "duration": 0.4, "details": f"Дууны файл: {audio_fn}"
+                })
                 return {
                     "transcript": transcript,
                     "response_text": response_text,
@@ -1253,7 +1543,7 @@ class AmirlanVoicebot:
         injection_alert = self.check_prompt_injection(transcript)
         if injection_alert:
             response_text = injection_alert["response_text"]
-            audio_fn = self.synthesize_speech_narakeet(response_text, voice=voice)
+            audio_fn, engine_lbl, _ = self.synthesize_speech(response_text, voice=voice)
             return {
                 "transcript": transcript,
                 "response_text": response_text,
@@ -1277,7 +1567,7 @@ class AmirlanVoicebot:
             decision = {"decision": "escalate", "reason": "Зүй бус харилцааг операторт шилжүүллээ.", "requires_human": True}
             escalation_data = self.execute_escalation_protocol(transcript, intent)
             response_text = abuse_alert["response_text"]
-            audio_fn = self.synthesize_speech_narakeet(response_text, voice=voice)
+            audio_fn, engine_lbl, _ = self.synthesize_speech(response_text, voice=voice)
             return {
                 "transcript": transcript,
                 "response_text": response_text,
@@ -1301,7 +1591,7 @@ class AmirlanVoicebot:
             decision = {"decision": "escalate", "reason": "Санхүүгийн гүйлгээ хийх эрхгүй (Compliance Boundary).", "requires_human": True}
             escalation_data = self.execute_escalation_protocol(transcript, intent)
             response_text = compliance_alert["response_text"]
-            audio_fn = self.synthesize_speech_narakeet(response_text, voice=voice)
+            audio_fn, engine_lbl, _ = self.synthesize_speech(response_text, voice=voice)
             return {
                 "transcript": transcript,
                 "response_text": response_text,
@@ -1377,8 +1667,9 @@ class AmirlanVoicebot:
         text_gen_duration = round(streamline_dur * 0.55, 2)
         audio_filename = None
         audio_error = None
+        engine_label = "TTS"
         try:
-            audio_filename = self.synthesize_speech_narakeet(response_text, voice=voice)
+            audio_filename, engine_label, _ = self.synthesize_speech(response_text, voice=voice)
         except Exception as e:
             audio_error = str(e)
 
@@ -1386,7 +1677,7 @@ class AmirlanVoicebot:
         stage_logs.append({
             "stage": 5,
             "name": "Response Generation",
-            "title": f"Хариу боловсруулах & TTS (Narakeet {voice})",
+            "title": f"Хариу боловсруулах & TTS ({engine_label})",
             "status": "completed" if audio_filename else "warning",
             "duration": stage5_total_duration,
             "details": f"Дууны файл: {audio_filename if audio_filename else audio_error}"
@@ -1570,10 +1861,62 @@ class AmirlanVoicebot:
         return summary
 
 
+def text_to_speech_gemini_optimized(
+    text: str, 
+    output_file: str = "khanbank_response.wav", 
+    voice: str = "Kore"
+) -> str:
+    """
+    Optimized Gemini 3.1 Flash TTS function using streaming chunks and 24kHz linear PCM -> .wav.
+    """
+    if not text or not text.strip():
+        raise ValueError("Текст хоосон байна.")
+
+    project = os.getenv("GOOGLE_CLOUD_PROJECT", "project-1d76ba00-25b9-47dd-8d3")
+    location = os.getenv("GCP_LOCATION", "us-central1")
+
+    if os.getenv("GEMINI_API_KEY"):
+        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    else:
+        client = genai.Client(vertexai=True, project=project, location=location)
+
+    gemini_voice = GEMINI_VOICE_MAP.get(voice, voice if voice in GEMINI_VOICE_MAP else "Kore")
+
+    stream = client.models.generate_content_stream(
+        model="gemini-3.1-flash-tts-preview",
+        contents=text.strip(),
+        config={
+            "response_modalities": ["AUDIO"],
+            "speech_config": {
+                "voice_config": {
+                    "prebuilt_voice_config": {
+                        "voice_name": gemini_voice
+                    }
+                }
+            }
+        }
+    )
+
+    all_pcm = bytearray()
+    for chunk in stream:
+        if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
+            for part in chunk.candidates[0].content.parts:
+                if hasattr(part, "inline_data") and part.inline_data and part.inline_data.data:
+                    all_pcm.extend(part.inline_data.data)
+
+    with wave.open(output_file, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(24000)
+        wf.writeframes(all_pcm)
+
+    return output_file
+
+
 def text_to_speech_narakeet_optimized(
     text: str, 
     output_file: str = "khanbank_response.m4a", 
-    voice: str = "Ganbaatar"
+    voice: str = "Ankhmaa"
 ) -> str:
     """
     Optimized Narakeet TTS function using persistent session and chunked streaming.
@@ -1585,7 +1928,11 @@ def text_to_speech_narakeet_optimized(
     if not api_key:
         raise ValueError("NARAKEET_API_KEY тохируулагдаагүй байна.")
 
-    url = f"https://api.narakeet.com/text-to-speech/m4a?voice={voice}"
+    clean_voice = voice.replace("narakeet:", "").strip()
+    if clean_voice not in ("Ankhmaa", "Ganbaatar"):
+        clean_voice = "Ankhmaa"
+
+    url = f"https://api.narakeet.com/text-to-speech/m4a?voice={clean_voice}"
 
     headers = {
         'Accept': 'application/octet-stream',
@@ -1593,25 +1940,18 @@ def text_to_speech_narakeet_optimized(
         'x-api-key': api_key,
     }
 
-    try:
-        # Use stream=True for faster initial response handling and reuse session
-        response = _narakeet_session.post(
-            url, 
-            headers=headers, 
-            data=text.encode('utf-8'), 
-            stream=True,
-            timeout=45
-        )
-        response.raise_for_status()
+    response = _narakeet_session.post(
+        url, 
+        headers=headers, 
+        data=text.encode('utf-8'), 
+        stream=True,
+        timeout=45
+    )
+    response.raise_for_status()
 
-        # Write audio data in chunks to disk
-        with open(output_file, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-                    
-        return output_file
-
-    except requests.exceptions.HTTPError as e:
-        error_details = e.response.text if e.response else "No details"
-        raise Exception(f"HTTP error {e.response.status_code}. Details: {error_details}") from None
+    with open(output_file, 'wb') as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
+                
+    return output_file

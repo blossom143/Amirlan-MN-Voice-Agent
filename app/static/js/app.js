@@ -57,12 +57,29 @@ document.addEventListener("DOMContentLoaded", () => {
     const intelUriLink = document.getElementById("intelUriLink");
     const intelUriBadge = document.getElementById("intelUriBadge");
 
-    // Voice Selector (Ankhmaa default, Ganbaatar supported)
+    // Voice Selector (Gemini Stream & Narakeet Batch supported)
     const voiceSelect = document.getElementById("voiceSelect");
 
     function getSelectedVoice() {
-        return voiceSelect ? voiceSelect.value : "Ankhmaa";
+        return voiceSelect ? voiceSelect.value : "gemini:Kore";
     }
+
+    // -------------------------------------------------------------------------
+    // PAGE-OPEN ENGINE WARMUP: Pre-warm GCP Tokens & LLM when webpage is opened
+    // -------------------------------------------------------------------------
+    function triggerEngineWarmup() {
+        fetch("/api/warmup", { method: "POST" })
+            .then(res => res.json())
+            .then(data => {
+                console.log("⚡ Voicebot engine pre-warmed on page open:", data);
+            })
+            .catch(err => {
+                console.debug("Warmup ping skipped:", err);
+            });
+    }
+
+    // Trigger immediately upon web page open
+    triggerEngineWarmup();
 
     // --- State Variables ---
     let currentInputMode = "call"; // 'call' | 'desktop' | 'upload' | 'text'
@@ -491,6 +508,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (currentlyPlayingAudio) {
             currentlyPlayingAudio.pause();
         }
+        stopPipelineTimers();
 
         // Reset UI
         if (callHudBanner) callHudBanner.style.display = "none";
@@ -932,6 +950,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const playerId = "audio_" + Math.random().toString(36).substring(2, 9);
 
         if (audioUrl) {
+            const isWavAudio = (audioUrl && audioUrl.endsWith(".wav"));
+            const dlExt = isWavAudio ? ".wav" : ".m4a";
             audioPlayerHtml = `
                 <div class="bubble-audio-player" id="${playerId}_container">
                     <button class="bubble-play-btn" id="${playerId}_btn" title="Replay response">
@@ -945,7 +965,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     </button>
                     <input type="range" class="bubble-seeker" id="${playerId}_seek" min="0" max="100" value="0">
                     <span class="bubble-time" id="${playerId}_time">0:00</span>
-                    <a href="${audioUrl}" download class="bubble-download-btn" title="Download audio (.m4a)">
+                    <a href="${audioUrl}" download class="bubble-download-btn" title="Download audio (${dlExt})">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                             <polyline points="7 10 12 15 17 10"/>
@@ -1054,8 +1074,10 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             currentlyPlayingAudio = latestAudio;
 
+            const isWavAudio = latestAudio.src && (latestAudio.src.includes(".wav") || latestAudio.src.includes("/api/tts/stream"));
+            const speakingLabel = isWavAudio ? "Speaking • Gemini Stream (.wav)" : "Speaking • Narakeet Batch (.m4a)";
             latestAudio.play().then(() => {
-                setOrbState("speaking", "Speaking • Narakeet Audio");
+                setOrbState("speaking", speakingLabel);
                 if (isCallActive && callVadStatus) {
                     callVadStatus.textContent = "Amirlan speaking...";
                 }

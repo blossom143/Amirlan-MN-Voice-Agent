@@ -24,8 +24,8 @@ flowchart TD
     SilenceCheck -- "No" --> RecordSpeech
     SilenceCheck -- "Yes" --> DispatchTurn["Dispatch Turn to Backend\nPOST /api/voice/process (is_call_mode: true)"]
 
-    DispatchTurn --> BackendProc["Backend 6-Stage ReAct Pipeline\n(Chirp 3 -> Gemini 2.5 -> Narakeet)"]
-    BackendProc --> ReceiveAudio["Receive Synthesized Audio URL (.m4a)\nAppend User Transcript & Assistant Bubble"]
+    DispatchTurn --> BackendProc["Backend 6-Stage ReAct Pipeline\n(Chirp 3 -> Gemini 2.5 -> Gemini 3.1 Flash TTS)"]
+    BackendProc --> ReceiveAudio["Receive Synthesized Audio URL (.wav)\nAppend User Transcript & Assistant Bubble"]
     ReceiveAudio --> PlayAudio["Autoplay Assistant Audio Response"]
     PlayAudio --> ListenEnd["Listen for audio.onended Event"]
     ListenEnd --> AutoRearm["🔄 Auto-Rearm Call Loop\nStatus: 'Call Active • Listening (Speak anytime)'"]
@@ -63,8 +63,8 @@ flowchart LR
 
     subgraph S5["Stage 5: Neural TTS Response"]
         EvalDecision -- "Answerable & Grounded" --> CleanText["Formulate Spoken Response\n(No repetitive boilerplate)"]
-        CleanText --> TTS["Narakeet Neural TTS API\nPersona: Ankhmaa or Ganbaatar"]
-        TTS --> AudioFile["Generated Audio (.m4a)"]
+        CleanText --> TTS["Gemini 3.1 Flash TTS API\nPersona: Kore, Aoede, Leda, Puck, Charon"]
+        TTS --> AudioFile["Generated Audio (.wav 24kHz)"]
     end
 
     subgraph S6["Stage 6: Human Escalation"]
@@ -85,13 +85,13 @@ pip install -r requirements.txt
 
 Set your API keys and credentials — either:
 ```bash
-export NARAKEET_API_KEY="your_narakeet_key"
 export GOOGLE_CLOUD_PROJECT="your_gcp_project"
 export GCP_LOCATION="us-central1"
+# Optional: GEMINI_API_KEY (if not using Vertex AI ADC)
+# export GEMINI_API_KEY="your_gemini_api_key"
 ```
 Or create a `.env` file:
 ```
-NARAKEET_API_KEY=your_narakeet_key
 GOOGLE_CLOUD_PROJECT=your_gcp_project
 GCP_LOCATION=us-central1
 ```
@@ -111,7 +111,14 @@ Then open http://localhost:5005
 Or with Docker:
 ```bash
 docker build -t mn-voicebot .
-docker run -d -p 5005:5005 --env-file .env mn-voicebot
+
+# Method A: Using your local ADC via volume mount (Recommended for local dev)
+docker run -d --name mn-voicebot -p 5005:5005 --env-file .env \
+  -v ~/.config/gcloud/application_default_credentials.json:/root/.config/gcloud/application_default_credentials.json:ro \
+  mn-voicebot
+
+# Method B: Using GOOGLE_CREDENTIALS_BASE64 in .env (No volume mounts needed)
+docker run -d --name mn-voicebot -p 5005:5005 --env-file .env mn-voicebot
 ```
 
 ## Deploying to Render.com
@@ -119,10 +126,9 @@ docker run -d -p 5005:5005 --env-file .env mn-voicebot
 1. In Render Dashboard, go to your Web Service -> **Environment**.
 2. Add the following environment variables:
    - `GOOGLE_CREDENTIALS_JSON`: Copy & paste the complete JSON text from your Google Cloud Service Account key or local ADC (`cat ~/.config/gcloud/application_default_credentials.json`).
-   - `NARAKEET_API_KEY`: Your Narakeet TTS API key.
    - `GOOGLE_CLOUD_PROJECT`: Your GCP project ID (e.g. `project-1d76ba00-25b9-47dd-8d3`).
    - `GCP_LOCATION`: `us-central1`.
-3. Check `https://<your-service>.onrender.com/api/status` to verify `has_speech_client: true` and `has_vertex_llm: true`.
+3. Check `https://<your-service>.onrender.com/api/status` to verify `has_speech_client: true`, `has_vertex_llm: true`, and `has_gemini_client: true`.
 
 ## Connecting your local knowledge base
 

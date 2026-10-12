@@ -8,7 +8,7 @@ import os
 import mimetypes
 import uuid
 import time
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, Response, stream_with_context
 from voicebot import AmirlanVoicebot, SOUNDDEVICE_AVAILABLE
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -26,6 +26,28 @@ def index():
         has_sounddevice=SOUNDDEVICE_AVAILABLE,
         project_id=voicebot.project_id
     )
+
+
+@app.route("/api/warmup", methods=["GET", "POST"])
+def warmup_engine():
+    """
+    Called automatically when the user opens the web page.
+    Asynchronously pre-warms Google Cloud tokens, gRPC channels, and LLM/TTS sockets
+    in a background thread so the user's first voice turn has zero cold-start delay.
+    """
+    import threading
+    if getattr(voicebot, "_is_warmed_up", False):
+        return jsonify({"success": True, "status": "already_warm"})
+
+    def _async_warmup():
+        try:
+            voicebot.warmup()
+        except Exception as err:
+            print(f"Warning during background warmup: {err}")
+
+    thread = threading.Thread(target=_async_warmup, daemon=True)
+    thread.start()
+    return jsonify({"success": True, "status": "warmup_started_in_background"})
 
 
 @app.route("/api/voice/process", methods=["POST"])
@@ -60,7 +82,7 @@ def process_voice():
         except Exception as save_err:
             print(f"Warning: Failed to save input audio: {save_err}")
 
-        voice = request.form.get("voice", "Ankhmaa").strip()
+        voice = request.form.get("voice", "Kore").strip()
         is_call_mode = request.form.get("is_call_mode", "false").lower() in ("true", "1")
         result = voicebot.run_full_pipeline(audio_bytes=audio_bytes, voice=voice, is_call_mode=is_call_mode)
         return jsonify({"success": True, **result})
@@ -83,7 +105,7 @@ def record_desktop():
     try:
         data = request.get_json(silent=True) or {}
         duration = int(data.get("duration", 5))
-        voice = data.get("voice", "Ankhmaa").strip()
+        voice = data.get("voice", "Kore").strip()
 
         recorded_filepath = voicebot.record_microphone_desktop(duration_secs=duration)
         with open(recorded_filepath, "rb") as f:
@@ -100,7 +122,7 @@ def process_text():
     """Processes text inquiries directly through Stages 2-6."""
     data = request.get_json(silent=True) or {}
     text_query = data.get("text", "").strip()
-    voice = data.get("voice", "Ankhmaa").strip()
+    voice = data.get("voice", "Kore").strip()
 
     if not text_query:
         return jsonify({"success": False, "error": "Асуулт хоосон байна."}), 400
@@ -127,16 +149,41 @@ def clear_chat():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/tts/stream")
+def stream_tts():
+    """
+    Streams real-time speech synthesis using Gemini 3.1 Flash TTS (preview).
+    Delivers chunked transfer encoding with 44-byte WAV header first,
+    followed by live 24kHz linear PCM audio frames as they arrive from Gemini.
+    """
+    text = request.args.get("text", "").strip()
+    voice = request.args.get("voice", "Kore").strip()
+    if not text:
+        return jsonify({"success": False, "error": "Текст хоосон байна."}), 400
+
+    return Response(
+        stream_with_context(voicebot.stream_speech_gemini_tts(text=text, voice=voice)),
+        mimetype="audio/wav",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Transfer-Encoding": "chunked"
+        }
+    )
+
+
 @app.route("/audio/<path:filename>")
 def serve_audio(filename):
-    """Streams synthesized .m4a audio files with appropriate audio/mp4 headers."""
+    """Streams synthesized audio files (.wav or .m4a) with appropriate headers."""
     mime_type, _ = mimetypes.guess_type(filename)
-    if filename.endswith(".m4a"):
+    if filename.endswith(".wav"):
+        mime_type = "audio/wav"
+    elif filename.endswith(".m4a"):
         mime_type = "audio/mp4"
     return send_from_directory(
         voicebot.output_dir,
         filename,
-        mimetype=mime_type or "audio/mp4",
+        mimetype=mime_type or "audio/wav",
         as_attachment=False
     )
 
@@ -152,9 +199,16 @@ def system_status():
         "stt_model": "chirp_3",
         "stt_endpoint": f"{voicebot.stt_location}-speech.googleapis.com",
         "llm_model": "gemini-2.5-flash",
-        "tts_default_voice": "Ankhmaa (.m4a)",
-        "available_voices": ["Ankhmaa", "Ganbaatar"],
+        "tts_engines": ["gemini-3.1-flash-tts-preview", "narakeet-neural"],
+        "tts_default_voice": "gemini:Kore (.wav)",
+        "available_voices": [
+            {"id": "gemini:Kore", "name": "Kore", "gender": "Female", "engine": "Gemini 3.1 Flash (Stream)", "format": ".wav"},
+            {"id": "gemini:Puck", "name": "Puck", "gender": "Male", "engine": "Gemini 3.1 Flash (Stream)", "format": ".wav"},
+            {"id": "narakeet:Ankhmaa", "name": "Ankhmaa", "gender": "Female", "engine": "Narakeet Neural (Batch)", "format": ".m4a"},
+            {"id": "narakeet:Ganbaatar", "name": "Ganbaatar", "gender": "Male", "engine": "Narakeet Neural (Batch)", "format": ".m4a"}
+        ],
         "sounddevice_enabled": SOUNDDEVICE_AVAILABLE,
+        "has_gemini_client": bool(voicebot.genai_client),
         "has_narakeet_key": bool(voicebot.narakeet_api_key),
         "caching_enabled": voicebot.caching_enabled,
         "has_speech_client": bool(voicebot.speech_client),

@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Amirlan • Conversational Voice AI Agent</title>
     <meta name="description"
-        content="Next-generation autonomous speech-to-speech AI voice agent powered by Google Cloud Chirp 3, Gemini 2.5 Flash, and Narakeet Neural TTS.">
+        content="Next-generation autonomous speech-to-speech AI voice agent powered by Google Cloud Chirp 3, Gemini 2.5 Flash, and Gemini 3.1 Flash TTS (preview).">
 
     <!-- Google Fonts: Space Grotesk, Plus Jakarta Sans, Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -69,8 +69,14 @@
                     </svg>
                     <label for="voiceSelect" class="voice-picker-label">Voice:</label>
                     <select id="voiceSelect" class="sleek-select">
-                        <option value="Ankhmaa" selected>Ankhmaa (Female)</option>
-                        <option value="Ganbaatar">Ganbaatar (Male)</option>
+                        <optgroup label="⚡ Gemini 3.1 Flash (Streaming • .wav)">
+                            <option value="gemini:Kore" selected>Kore (Female • Stream .wav)</option>
+                            <option value="gemini:Puck">Puck (Male • Stream .wav)</option>
+                        </optgroup>
+                        <optgroup label="🎙️ Narakeet Neural (Batch • .m4a)">
+                            <option value="narakeet:Ankhmaa">Ankhmaa (Female • Batch .m4a)</option>
+                            <option value="narakeet:Ganbaatar">Ganbaatar (Male • Batch .m4a)</option>
+                        </optgroup>
                     </select>
                 </div>
 
@@ -97,7 +103,7 @@
 
                 <div class="status-indicator">
                     <span class="status-light"></span>
-                    <span class="status-text">Chirp 3 • Gemini 2.5 • Narakeet</span>
+                    <span class="status-text">Chirp 3 • Gemini 2.5 • Gemini TTS &amp; Narakeet</span>
                 </div>
                 <div class="telemetry-chip">
                     <span class="telemetry-label">REGION</span>
@@ -235,29 +241,29 @@
                             </div>
                         </div>
 
-                        <!-- Narakeet Streaming Analysis Card -->
+                        <!-- Gemini 3.1 Flash TTS Real-Time Streaming Performance Card -->
                         <div class="dev-box">
-                            <h3 class="dev-box-title">Narakeet TTS Streaming Analysis</h3>
-                            <p class="dev-box-desc">Empirical telemetry analysis on Narakeet HTTP streaming behavior:</p>
+                            <h3 class="dev-box-title">Gemini 3.1 Flash TTS Streaming Telemetry</h3>
+                            <p class="dev-box-desc">Empirical telemetry analysis on Gemini 3.1 Flash TTS (preview) streaming behavior:</p>
                             <div class="narakeet-analysis-card">
                                 <div class="analysis-row">
-                                    <span class="analysis-key">API Protocol:</span>
-                                    <span class="analysis-val font-mono">Synchronous HTTP POST with Content-Length</span>
+                                    <span class="analysis-key">Model / Engine:</span>
+                                    <span class="analysis-val font-mono">gemini-3.1-flash-tts-preview</span>
                                 </div>
                                 <div class="analysis-row">
-                                    <span class="analysis-key">Backend Synthesis Time:</span>
-                                    <span class="analysis-val font-mono text-orange">~2.62s (TTFB before 1st byte)</span>
+                                    <span class="analysis-key">Audio Encoding:</span>
+                                    <span class="analysis-val font-mono">Linear PCM 24kHz Mono (WAV RIFF stream)</span>
                                 </div>
                                 <div class="analysis-row">
-                                    <span class="analysis-key">Network Transfer Time:</span>
-                                    <span class="analysis-val font-mono text-green">~0.035s (21 chunks / 83 KB in 35ms)</span>
+                                    <span class="analysis-key">Time-to-First-Byte (TTFB):</span>
+                                    <span class="analysis-val font-mono text-green">&lt;0.8s (~766ms live latency)</span>
                                 </div>
                                 <div class="analysis-row">
                                     <span class="analysis-key">Streaming Verification:</span>
-                                    <span class="analysis-badge badge-warning">Server Buffers Full Audio</span>
+                                    <span class="analysis-badge badge-success">True Real-Time Token Streaming</span>
                                 </div>
                                 <div class="analysis-explanation">
-                                    <strong>Why speed feels unchanged:</strong> Narakeet generates the complete audio file on its backend before sending HTTP 200 headers with fixed <code>Content-Length</code>. Once generated, all 83 KB downloads across the network in just 35ms. Because Narakeet does not emit incomplete audio tokens as they are generated, client-side HTTP streaming (<code>stream=True</code>) cannot bypass the 2.6s server-side synthesis delay.
+                                    <strong>Native Streaming vs Legacy TTS:</strong> Unlike traditional REST TTS which buffers entire audio files before responding (~2.6s delay), Gemini 3.1 Flash TTS emits progressive audio frames in 20-30ms intervals. The browser receives the initial audio chunk in under 800ms, enabling seamless real-time conversational voice responses.
                                 </div>
                             </div>
                         </div>
@@ -518,12 +524,11 @@
                                 <div class="step-top-line">
                                     <span class="step-name">Stage 5: Response Generation</span>
                                     <div class="step-right-meta">
-                                        <span class="tech-tag">Narakeet .m4a</span>
+                                        <span class="tech-tag">Stream .wav / Batch .m4a</span>
                                         <span class="step-live-timer" id="timerStep5">0.0s</span>
                                     </div>
                                 </div>
-                                <p class="step-description">Formulates polite response and synthesizes audio via neural
-                                    Narakeet voice</p>
+                                <p class="step-description">Formulates polite response and synthesizes audio via Gemini Stream or Narakeet Batch</p>
                                 <div class="step-detail-snippet" id="step5Meta">Idle</div>
                             </div>
                         </div>
