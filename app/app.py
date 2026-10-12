@@ -5,6 +5,7 @@ Flask server providing REST APIs and serving the dynamic luxury web UI.
 """
 
 import os
+import json
 import mimetypes
 import uuid
 import time
@@ -84,6 +85,23 @@ def process_voice():
 
         voice = request.form.get("voice", "Kore").strip()
         is_call_mode = request.form.get("is_call_mode", "false").lower() in ("true", "1")
+        stream_mode = request.form.get("stream", "false").lower() in ("true", "1") or "application/x-ndjson" in request.headers.get("Accept", "")
+
+        if stream_mode:
+            def generate_voice_stream():
+                try:
+                    for event in voicebot.run_full_pipeline_stream(audio_bytes=audio_bytes, voice=voice, is_call_mode=is_call_mode):
+                        if event.get("event") == "complete" and "data" in event and isinstance(event["data"], dict):
+                            event["data"]["success"] = True
+                        yield json.dumps(event, ensure_ascii=False) + "\n"
+                except Exception as stream_err:
+                    yield json.dumps({"event": "error", "error": str(stream_err)}, ensure_ascii=False) + "\n"
+
+            resp = Response(stream_with_context(generate_voice_stream()), mimetype="application/x-ndjson")
+            resp.headers["X-Accel-Buffering"] = "no"
+            resp.headers["Cache-Control"] = "no-cache"
+            return resp
+
         result = voicebot.run_full_pipeline(audio_bytes=audio_bytes, voice=voice, is_call_mode=is_call_mode)
         return jsonify({"success": True, **result})
     except Exception as e:
@@ -106,10 +124,26 @@ def record_desktop():
         data = request.get_json(silent=True) or {}
         duration = int(data.get("duration", 5))
         voice = data.get("voice", "Kore").strip()
+        stream_mode = data.get("stream", False) or "application/x-ndjson" in request.headers.get("Accept", "")
 
         recorded_filepath = voicebot.record_microphone_desktop(duration_secs=duration)
         with open(recorded_filepath, "rb") as f:
             audio_bytes = f.read()
+
+        if stream_mode:
+            def generate_desktop_stream():
+                try:
+                    for event in voicebot.run_full_pipeline_stream(audio_bytes=audio_bytes, voice=voice):
+                        if event.get("event") == "complete" and "data" in event and isinstance(event["data"], dict):
+                            event["data"]["success"] = True
+                        yield json.dumps(event, ensure_ascii=False) + "\n"
+                except Exception as stream_err:
+                    yield json.dumps({"event": "error", "error": str(stream_err)}, ensure_ascii=False) + "\n"
+
+            resp = Response(stream_with_context(generate_desktop_stream()), mimetype="application/x-ndjson")
+            resp.headers["X-Accel-Buffering"] = "no"
+            resp.headers["Cache-Control"] = "no-cache"
+            return resp
 
         result = voicebot.run_full_pipeline(audio_bytes=audio_bytes, voice=voice)
         return jsonify({"success": True, **result})
@@ -123,11 +157,27 @@ def process_text():
     data = request.get_json(silent=True) or {}
     text_query = data.get("text", "").strip()
     voice = data.get("voice", "Kore").strip()
+    stream_mode = data.get("stream", False) or "application/x-ndjson" in request.headers.get("Accept", "")
 
     if not text_query:
         return jsonify({"success": False, "error": "Асуулт хоосон байна."}), 400
 
     try:
+        if stream_mode:
+            def generate_text_stream():
+                try:
+                    for event in voicebot.run_full_pipeline_stream(text_query=text_query, voice=voice):
+                        if event.get("event") == "complete" and "data" in event and isinstance(event["data"], dict):
+                            event["data"]["success"] = True
+                        yield json.dumps(event, ensure_ascii=False) + "\n"
+                except Exception as stream_err:
+                    yield json.dumps({"event": "error", "error": str(stream_err)}, ensure_ascii=False) + "\n"
+
+            resp = Response(stream_with_context(generate_text_stream()), mimetype="application/x-ndjson")
+            resp.headers["X-Accel-Buffering"] = "no"
+            resp.headers["Cache-Control"] = "no-cache"
+            return resp
+
         result = voicebot.run_full_pipeline(text_query=text_query, voice=voice)
         return jsonify({"success": True, **result})
     except Exception as e:
@@ -172,6 +222,13 @@ def stream_tts():
     )
 
 
+@app.route("/api/test_log", methods=["POST"])
+def test_log():
+    data = request.get_json(silent=True) or {}
+    print(f"[BROWSER AUDIO DIAGNOSTIC] {data.get('msg')}", flush=True)
+    return jsonify({"ok": True})
+
+
 @app.route("/audio/<path:filename>")
 def serve_audio(filename):
     """Streams synthesized audio files (.wav or .m4a) with appropriate headers."""
@@ -204,8 +261,9 @@ def system_status():
         "available_voices": [
             {"id": "gemini:Kore", "name": "Kore", "gender": "Female", "engine": "Gemini 3.1 Flash (Stream)", "format": ".wav"},
             {"id": "gemini:Puck", "name": "Puck", "gender": "Male", "engine": "Gemini 3.1 Flash (Stream)", "format": ".wav"},
-            {"id": "narakeet:Ankhmaa", "name": "Ankhmaa", "gender": "Female", "engine": "Narakeet Neural (Batch)", "format": ".m4a"},
-            {"id": "narakeet:Ganbaatar", "name": "Ganbaatar", "gender": "Male", "engine": "Narakeet Neural (Batch)", "format": ".m4a"}
+            {"id": "narakeet:Ankhmaa", "name": "Ankhmaa (Optimized)", "gender": "Female", "engine": "Narakeet Neural (Optimized Batch)", "format": ".m4a"},
+            {"id": "narakeet:Ankhmaa:unoptimized", "name": "Ankhmaa (Unoptimized)", "gender": "Female", "engine": "Narakeet Neural (Unoptimized Batch)", "format": ".m4a"},
+            {"id": "narakeet:Ganbaatar", "name": "Ganbaatar (Optimized)", "gender": "Male", "engine": "Narakeet Neural (Optimized Batch)", "format": ".m4a"}
         ],
         "sounddevice_enabled": SOUNDDEVICE_AVAILABLE,
         "has_gemini_client": bool(voicebot.genai_client),

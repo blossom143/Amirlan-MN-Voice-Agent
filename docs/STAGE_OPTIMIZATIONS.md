@@ -79,13 +79,17 @@ gantt
      - Automatically packages linear PCM chunks into standard 44-byte RIFF WAV headers.
   2. **Narakeet Batch TTS**:
      - Utilizes `requests.Session()` with persistent TCP/TLS keep-alive connections to `api.narakeet.com`, avoiding repeated TLS handshake penalties (~300ms saved per turn).
-     - Streams binary data into disk chunks with `stream=True`.
+     - Streams binary data into disk chunks with `stream=True` and 8KB buffer writes.
+     - **Complete Speech Guarantee**: Configured with `max_bytes=800` (up to 350 Mongolian Cyrillic characters) to prevent audio cutoff.
+     - **ReAct Prompt Alignment**: Injects a strict constraint (*"1-2 товч өгүүлбэрээр хариул"*) specifically for optimized Narakeet, ensuring LLM output length harmonizes with batch audio synthesis.
+     - **Unoptimized Baseline**: Features a side-by-side benchmarking voice (`narakeet:Ankhmaa:unoptimized`) bypassing connection pooling, streaming disk writes, caching, and prompt limits to measure optimization impact directly.
   3. **Two-Tier Response & Phrase Memoization Cache**:
      - **Tier 1 (Frequent Phrases)**: Pre-synthesizes standard phrases (greetings, operator escalations, clarification requests).
      - **Tier 2 (Full Pipeline Memoization)**: Caches `{voice:transcript}` pairs. Repeat questions return in **$< 0.02\text{s}$** without invoking STT, LLM, or TTS.
 - **Latency Profile**:
   - **Gemini 3.1 Flash TTS**: **~0.76s TTFB** (streaming), **1.5s – 2.0s** full file download.
-  - **Narakeet Batch TTS**: **2.2s – 2.8s** full file download.
+  - **Narakeet Optimized Batch TTS**: **2.2s – 2.8s** full file download.
+  - **Narakeet Unoptimized Batch TTS**: **4.5s – 7.5s** full file download (fresh TLS, uncompressed buffer, raw text).
   - **Cache Hit**: **0.01s – 0.02s**.
 
 ---

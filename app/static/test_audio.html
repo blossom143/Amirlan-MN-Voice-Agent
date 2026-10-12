@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test Audio</title></head>
+<body>
+<h1>Audio Stream Test</h1>
+<button id="btn" style="font-size:24px;padding:10px 20px;">CLICK TO PLAY</button>
+<div id="log" style="font-family:monospace;margin-top:20px;white-space:pre-wrap;"></div>
+<script>
+const logEl = document.getElementById('log');
+function log(msg) {
+    logEl.innerText += '\n' + new Date().toISOString().substring(11, 23) + ' - ' + msg;
+    console.log(msg);
+    fetch("/api/test_log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ msg: msg })
+    }).catch(() => {});
+}
+
+const url = "/api/tts/stream?text=" + encodeURIComponent("Хаан Банк нь Монгол орон даяар 550 гаруй салбартай.") + "&voice=Kore";
+log("Target URL: " + url);
+
+const audio = new Audio(url);
+audio.preload = "auto";
+
+audio.addEventListener('loadstart', () => log('EVENT: loadstart'));
+audio.addEventListener('progress', () => log('EVENT: progress (buffered=' + (audio.buffered.length ? audio.buffered.end(0) : 0) + ')'));
+audio.addEventListener('loadedmetadata', () => log('EVENT: loadedmetadata (duration=' + audio.duration + ')'));
+audio.addEventListener('loadeddata', () => log('EVENT: loadeddata'));
+audio.addEventListener('canplay', () => {
+    log('EVENT: canplay -> calling audio.play()...');
+    audio.play().then(() => log('audio.play() Promise RESOLVED successfully!'))
+                .catch(e => log('audio.play() Promise REJECTED: ' + e));
+});
+audio.addEventListener('canplaythrough', () => log('EVENT: canplaythrough'));
+audio.addEventListener('waiting', () => log('EVENT: waiting'));
+audio.addEventListener('stalled', () => log('EVENT: stalled'));
+audio.addEventListener('suspend', () => log('EVENT: suspend'));
+audio.addEventListener('play', () => log('EVENT: play'));
+audio.addEventListener('playing', () => log('EVENT: playing'));
+audio.addEventListener('timeupdate', () => log('EVENT: timeupdate (cur=' + audio.currentTime + ')'));
+audio.addEventListener('ended', () => log('EVENT: ended'));
+audio.addEventListener('error', (e) => {
+    const err = audio.error;
+    log('EVENT: ERROR code=' + (err ? err.code : 'unknown') + ' msg=' + (err ? err.message : ''));
+});
+
+document.getElementById('btn').onclick = () => {
+    log('Calling audio.play()...');
+    audio.play().then(() => log('audio.play() Promise RESOLVED'))
+                .catch(e => log('audio.play() Promise REJECTED: ' + e));
+};
+
+// Also test Web Audio API decoding:
+fetch(url).then(res => {
+    log('Fetch response status: ' + res.status + ' headers=' + JSON.stringify([...res.headers]));
+    return res.arrayBuffer();
+}).then(buf => {
+    log('Fetch downloaded ' + buf.byteLength + ' bytes.');
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    return ctx.decodeAudioData(buf).then(decoded => {
+        log('Web Audio decodeAudioData SUCCESS: duration=' + decoded.duration + 's rate=' + decoded.sampleRate);
+    }).catch(decodeErr => {
+        log('Web Audio decodeAudioData FAILED: ' + decodeErr);
+    });
+}).catch(fetchErr => {
+    log('Fetch error: ' + fetchErr);
+});
+</script>
+</body>
+</html>

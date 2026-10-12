@@ -1223,6 +1223,21 @@ body {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
+.bubble-tts-warning {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 6px 12px;
+    background: rgba(254, 243, 199, 0.95);
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    border-radius: var(--radius-sm, 8px);
+    color: #b45309;
+    font-size: 0.82rem;
+    font-weight: 500;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+}
+
 .bubble-play-btn {
     width: 34px;
     height: 34px;

@@ -74,8 +74,9 @@
                             <option value="gemini:Puck">Puck (Male • Stream .wav)</option>
                         </optgroup>
                         <optgroup label="🎙️ Narakeet Neural (Batch • .m4a)">
-                            <option value="narakeet:Ankhmaa">Ankhmaa (Female • Batch .m4a)</option>
-                            <option value="narakeet:Ganbaatar">Ganbaatar (Male • Batch .m4a)</option>
+                            <option value="narakeet:Ankhmaa">Ankhmaa (Female • Optimized Batch .m4a)</option>
+                            <option value="narakeet:Ankhmaa:unoptimized">Ankhmaa (Female • Unoptimized Batch .m4a)</option>
+                            <option value="narakeet:Ganbaatar">Ganbaatar (Male • Optimized Batch .m4a)</option>
                         </optgroup>
                     </select>
                 </div>
@@ -331,7 +332,7 @@
                                     <th>Stage 1 (STT)</th>
                                     <th>Stage 2 (Intent)</th>
                                     <th>Stage 3 (Search)</th>
-                                    <th>Stage 4 (Decision)</th>
+                                    <th>Stage 4 (Decision & Output)</th>
                                     <th>Stage 5 (TTS)</th>
                                     <th>Total Turn</th>
                                     <th>Status</th>
@@ -502,14 +503,13 @@
                             </div>
                             <div class="step-body">
                                 <div class="step-top-line">
-                                    <span class="step-name">Stage 4: Decision Making</span>
+                                    <span class="step-name">Stage 4: Decision & Output stage</span>
                                     <div class="step-right-meta">
-                                        <span class="tech-tag">ReAct Engine</span>
+                                        <span class="tech-tag">Gemini 2.5 Flash</span>
                                         <span class="step-live-timer" id="timerStep4">0.0s</span>
                                     </div>
                                 </div>
-                                <p class="step-description">Evaluates response completeness and verifies if human
-                                    transfer is required</p>
+                                <p class="step-description">Evaluates grounded reasoning, formats structured JSON, and generates Mongolian output</p>
                                 <div class="step-detail-snippet" id="step4Meta">Idle</div>
                             </div>
                         </div>
@@ -775,7 +775,7 @@
     </div>
 
     <!-- Client Script -->
-    <script src="{{ url_for('static', filename='js/app.js') }}?v=3.0"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}?v=3.1"></script>
 </body>
 
 </html>

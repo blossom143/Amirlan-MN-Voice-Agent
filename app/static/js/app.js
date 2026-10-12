@@ -99,6 +99,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let lastSoundTimestamp = 0;
     let consecutiveSpeechFrames = 0;
     let isTurnInFlight = false;
+    let activeTurnAbortController = null;
 
     // Canvas & Web Audio API
     let audioCtx = null;
@@ -299,15 +300,22 @@ document.addEventListener("DOMContentLoaded", () => {
         stepStartTime = performance.now();
 
         // Highlight active step
-        for (let i = 1; i < stepNum; i++) {
-            const prev = document.getElementById(`step${i}`);
-            if (prev) {
-                prev.classList.remove("active");
-                prev.classList.add("completed");
+        for (let i = 1; i <= 6; i++) {
+            const el = document.getElementById(`step${i}`);
+            if (el) {
+                if (i < stepNum) {
+                    el.classList.remove("active");
+                    if (!el.classList.contains("escalated")) {
+                        el.classList.add("completed");
+                    }
+                } else if (i === stepNum) {
+                    el.classList.add("active");
+                    el.classList.remove("completed", "escalated");
+                } else {
+                    el.classList.remove("active");
+                }
             }
         }
-        const currentEl = document.getElementById(`step${stepNum}`);
-        if (currentEl) currentEl.classList.add("active");
 
         const timerEl = document.getElementById(`timerStep${stepNum}`);
         const metaEl = document.getElementById(`step${stepNum}Meta`);
@@ -317,6 +325,130 @@ document.addEventListener("DOMContentLoaded", () => {
             const elapsed = ((performance.now() - stepStartTime) / 1000).toFixed(1);
             if (timerEl) timerEl.textContent = `${elapsed}s`;
         }, 50);
+    }
+
+    function completeStepLiveTimer(stepNum, duration, details, status) {
+        if (currentActiveStep === stepNum && liveStepInterval) {
+            clearInterval(liveStepInterval);
+            liveStepInterval = null;
+        }
+        const stepEl = document.getElementById(`step${stepNum}`);
+        const timerEl = document.getElementById(`timerStep${stepNum}`);
+        const metaEl = document.getElementById(`step${stepNum}Meta`);
+
+        if (stepEl) {
+            stepEl.classList.remove("active");
+            if (status === "triggered" || status === "blocked") {
+                stepEl.classList.add("escalated");
+            } else {
+                stepEl.classList.add("completed");
+            }
+        }
+        if (timerEl && typeof duration !== "undefined") {
+            timerEl.textContent = `${duration}s`;
+        }
+        if (metaEl && details) {
+            metaEl.textContent = details;
+        }
+    }
+
+    async function consumePipelineStream(url, options = {}, onComplete = null) {
+        if (activeTurnAbortController) {
+            try { activeTurnAbortController.abort(); } catch (_) {}
+        }
+        activeTurnAbortController = new AbortController();
+
+        startPipelineTimers();
+
+        const headers = options.headers || {};
+        headers["Accept"] = "application/x-ndjson";
+
+        const fetchOptions = {
+            ...options,
+            headers,
+            signal: activeTurnAbortController.signal
+        };
+
+        let finalData = null;
+        let streamHadError = false;
+
+        try {
+            const response = await fetch(url, fetchOptions);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const contentType = response.headers.get("Content-Type") || "";
+            if (contentType.includes("application/x-ndjson") && response.body) {
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = "";
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop(); // keep uncompleted tail
+
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (!trimmed) continue;
+                        try {
+                            const msg = JSON.parse(trimmed);
+                            if (msg.event === "stage_start") {
+                                startStepLiveTimer(msg.stage);
+                                const metaEl = document.getElementById(`step${msg.stage}Meta`);
+                                if (metaEl && msg.title) metaEl.textContent = msg.title;
+                            } else if (msg.event === "stage_end") {
+                                completeStepLiveTimer(msg.stage, msg.duration, msg.details, msg.status);
+                            } else if (msg.event === "complete") {
+                                finalData = msg.data;
+                            } else if (msg.event === "error") {
+                                streamHadError = true;
+                                throw new Error(msg.error || "Streaming pipeline error");
+                            }
+                        } catch (parseErr) {
+                            if (streamHadError) throw parseErr;
+                            console.warn("NDJSON parse warning:", parseErr, trimmed);
+                        }
+                    }
+                }
+                if (buffer.trim()) {
+                    try {
+                        const msg = JSON.parse(buffer.trim());
+                        if (msg.event === "complete") finalData = msg.data;
+                    } catch (_) {}
+                }
+            } else {
+                finalData = await response.json();
+            }
+
+            activeTurnAbortController = null;
+            isTurnInFlight = false;
+
+            if (finalData) {
+                if (typeof finalData.success === "undefined") {
+                    finalData.success = true;
+                }
+                if (onComplete) {
+                    onComplete(finalData);
+                } else {
+                    handlePipelineResponse(finalData);
+                }
+            } else if (!streamHadError) {
+                throw new Error("No response payload received from server.");
+            }
+        } catch (err) {
+            activeTurnAbortController = null;
+            isTurnInFlight = false;
+            if (err.name === "AbortError") {
+                console.log("⚡ Pipeline request was intentionally aborted (Barge-in / User cancel).");
+                stopPipelineTimers();
+                return;
+            }
+            throw err;
+        }
     }
 
     function stopPipelineTimers() {
@@ -476,6 +608,11 @@ document.addEventListener("DOMContentLoaded", () => {
         isUserSpeaking = false;
         isTurnInFlight = false;
 
+        if (activeTurnAbortController) {
+            try { activeTurnAbortController.abort(); } catch (_) { }
+            activeTurnAbortController = null;
+        }
+
         if (callTimerInterval) {
             clearInterval(callTimerInterval);
             callTimerInterval = null;
@@ -557,6 +694,16 @@ document.addEventListener("DOMContentLoaded", () => {
                     }
                 }
 
+                if (isTurnInFlight && consecutiveSpeechFrames >= 3) {
+                    console.log("⚡ Barge-in: User interrupted during in-flight reasoning! Aborting request...");
+                    if (activeTurnAbortController) {
+                        try { activeTurnAbortController.abort(); } catch (_) { }
+                        activeTurnAbortController = null;
+                    }
+                    isTurnInFlight = false;
+                    stopPipelineTimers();
+                }
+
                 if (consecutiveSpeechFrames >= 3 && !isUserSpeaking && !isTurnInFlight) {
                     // Speech Start
                     isUserSpeaking = true;
@@ -612,52 +759,48 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!isCallActive) return;
         isTurnInFlight = true;
 
-        startPipelineTimers();
-        simulateLiveStepTransitions();
-
         const formData = new FormData();
         const extension = audioBlob.type.includes("mp4") ? "mp4" : "webm";
         formData.append("audio", audioBlob, `call_input.${extension}`);
         formData.append("voice", getSelectedVoice());
         formData.append("is_call_mode", "true");
+        formData.append("stream", "true");
 
         try {
-            const res = await fetch("/api/voice/process", {
+            await consumePipelineStream("/api/voice/process", {
                 method: "POST",
                 body: formData
+            }, (data) => {
+                if (!isCallActive) return;
+
+                handlePipelineResponse(data);
+
+                // Wait for audio playback to finish, then automatically re-arm for next turn!
+                const allAudios = chatFeed.querySelectorAll("audio");
+                if (allAudios.length > 0) {
+                    const latestAudio = allAudios[allAudios.length - 1];
+                    const rearmCall = () => {
+                        if (isCallActive) {
+                            console.log("Assistant turn complete -> Call re-armed for user voice.");
+                            setOrbState("listening", "Call Active • Listening (Speak anytime)");
+                            if (callVadStatus) callVadStatus.textContent = "Listening • Speak anytime";
+                            recordBtnLabel.textContent = "End call";
+                            mainRecordBtn.classList.remove("btn-call-start");
+                            mainRecordBtn.classList.add("btn-end-call");
+                            updateCallIcon(true);
+                        }
+                    };
+                    latestAudio.addEventListener("ended", rearmCall, { once: true });
+                    latestAudio.addEventListener("error", rearmCall, { once: true });
+                } else {
+                    setOrbState("listening", "Call Active • Listening (Speak anytime)");
+                    if (callVadStatus) callVadStatus.textContent = "Listening • Speak anytime";
+                    recordBtnLabel.textContent = "End call";
+                    mainRecordBtn.classList.remove("btn-call-start");
+                    mainRecordBtn.classList.add("btn-end-call");
+                    updateCallIcon(true);
+                }
             });
-            const data = await res.json();
-            isTurnInFlight = false;
-
-            if (!isCallActive) return;
-
-            handlePipelineResponse(data);
-
-            // Wait for audio playback to finish, then automatically re-arm for next turn!
-            const allAudios = chatFeed.querySelectorAll("audio");
-            if (allAudios.length > 0) {
-                const latestAudio = allAudios[allAudios.length - 1];
-                const rearmCall = () => {
-                    if (isCallActive) {
-                        console.log("Assistant turn complete -> Call re-armed for user voice.");
-                        setOrbState("listening", "Call Active • Listening (Speak anytime)");
-                        if (callVadStatus) callVadStatus.textContent = "Listening • Speak anytime";
-                        recordBtnLabel.textContent = "End call";
-                        mainRecordBtn.classList.remove("btn-call-start");
-                        mainRecordBtn.classList.add("btn-end-call");
-                        updateCallIcon(true);
-                    }
-                };
-                latestAudio.addEventListener("ended", rearmCall, { once: true });
-                latestAudio.addEventListener("error", rearmCall, { once: true });
-            } else {
-                setOrbState("listening", "Call Active • Listening (Speak anytime)");
-                if (callVadStatus) callVadStatus.textContent = "Listening • Speak anytime";
-                recordBtnLabel.textContent = "End call";
-                mainRecordBtn.classList.remove("btn-call-start");
-                mainRecordBtn.classList.add("btn-end-call");
-                updateCallIcon(true);
-            }
 
         } catch (err) {
             console.error("Call turn network error:", err);
@@ -679,23 +822,17 @@ document.addEventListener("DOMContentLoaded", () => {
     // 6. PIPELINE API EXECUTION
     // =========================================================================
     async function sendAudioBlobToPipeline(audioBlob) {
-        startPipelineTimers();
-
         const formData = new FormData();
         const extension = audioBlob.type.includes("mp4") ? "mp4" : "webm";
         formData.append("audio", audioBlob, `speech_input.${extension}`);
         formData.append("voice", getSelectedVoice());
-
-        // Progress simulation for live feedback while waiting for server response
-        simulateLiveStepTransitions();
+        formData.append("stream", "true");
 
         try {
-            const res = await fetch("/api/voice/process", {
+            await consumePipelineStream("/api/voice/process", {
                 method: "POST",
                 body: formData
             });
-            const data = await res.json();
-            handlePipelineResponse(data);
         } catch (err) {
             console.error("Pipeline network error:", err);
             stopPipelineTimers();
@@ -733,18 +870,13 @@ document.addEventListener("DOMContentLoaded", () => {
     async function triggerHardwareRecording() {
         primeAudioContext();
         setOrbState("listening", "Recording from Hardware Mic (5 seconds)...");
-        startPipelineTimers();
-
-        simulateLiveStepTransitions();
 
         try {
-            const res = await fetch("/api/voice/record-desktop", {
+            await consumePipelineStream("/api/voice/record-desktop", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ duration: 5, voice: getSelectedVoice() })
+                body: JSON.stringify({ duration: 5, voice: getSelectedVoice(), stream: true })
             });
-            const data = await res.json();
-            handlePipelineResponse(data);
         } catch (err) {
             console.error("Hardware mic error:", err);
             stopPipelineTimers();
@@ -757,21 +889,17 @@ document.addEventListener("DOMContentLoaded", () => {
         primeAudioContext();
         setInputMode("upload");
         setOrbState("analyzing", `Processing audio: ${file.name}...`);
-        startPipelineTimers();
 
         const formData = new FormData();
         formData.append("audio", file, file.name);
         formData.append("voice", getSelectedVoice());
-
-        simulateLiveStepTransitions();
+        formData.append("stream", "true");
 
         try {
-            const res = await fetch("/api/voice/process", {
+            await consumePipelineStream("/api/voice/process", {
                 method: "POST",
                 body: formData
             });
-            const data = await res.json();
-            handlePipelineResponse(data);
         } catch (err) {
             console.error("Uploaded file error:", err);
             stopPipelineTimers();
@@ -784,19 +912,13 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!text.trim()) return;
         primeAudioContext();
         setOrbState("analyzing", "Analyzing query (Gemini 2.5 Flash)...");
-        startPipelineTimers();
-        startStepLiveTimer(2);
-
-        simulateLiveStepTransitions(2);
 
         try {
-            const res = await fetch("/api/text/process", {
+            await consumePipelineStream("/api/text/process", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ text: text.trim(), voice: getSelectedVoice() })
+                body: JSON.stringify({ text: text.trim(), voice: getSelectedVoice(), stream: true })
             });
-            const data = await res.json();
-            handlePipelineResponse(data);
             if (textQueryInput) textQueryInput.value = "";
         } catch (err) {
             console.error("Text process error:", err);
@@ -807,31 +929,12 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // Simulates visual stage progression ticks while awaiting response
+    // Disabled: Real-time NDJSON events from server drive live step transitions
     function simulateLiveStepTransitions(startStep = 1) {
         if (stepSimulationInterval) {
             clearInterval(stepSimulationInterval);
             stepSimulationInterval = null;
         }
-        let step = startStep;
-        stepSimulationInterval = setInterval(() => {
-            if (!pipelineStartTime) {
-                if (stepSimulationInterval) {
-                    clearInterval(stepSimulationInterval);
-                    stepSimulationInterval = null;
-                }
-                return;
-            }
-            if (step < 5) {
-                step++;
-                startStepLiveTimer(step);
-            } else {
-                if (stepSimulationInterval) {
-                    clearInterval(stepSimulationInterval);
-                    stepSimulationInterval = null;
-                }
-            }
-        }, 2200);
     }
 
     // =========================================================================
@@ -897,15 +1000,20 @@ document.addEventListener("DOMContentLoaded", () => {
             if (escalationCard) escalationCard.style.display = "none";
         }
 
-        // 6. Autoplay the synthesized response audio
+        // 6. Autoplay the synthesized response audio or handle graceful recovery
         if (data.audio_url) {
             autoplayNewestAudio(data.audio_url);
         } else {
+            console.log("TTS service: Account limit exceeded. ");
+            setOrbState("warning", "TTS service: Account limit exceeded. ");
             if (isCallActive) {
-                setOrbState("listening", "Call Active • Speak anytime");
-                if (callVadStatus) callVadStatus.textContent = "Listening • Speak anytime";
-            } else if (!data.is_escalated) {
-                setOrbState("", "Ready to Listen");
+                if (callVadStatus) callVadStatus.textContent = "TTS service: Account limit exceeded. ";
+                setTimeout(() => {
+                    if (isCallActive) {
+                        setOrbState("listening", "Call Active • Speak anytime");
+                        if (callVadStatus) callVadStatus.textContent = "Listening • Speak anytime";
+                    }
+                }, 3000);
             }
         }
 
@@ -950,7 +1058,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const playerId = "audio_" + Math.random().toString(36).substring(2, 9);
 
         if (audioUrl) {
-            const isWavAudio = (audioUrl && audioUrl.endsWith(".wav"));
+            const isWavAudio = (audioUrl && (audioUrl.endsWith(".wav") || audioUrl.includes("/api/tts/stream")));
             const dlExt = isWavAudio ? ".wav" : ".m4a";
             audioPlayerHtml = `
                 <div class="bubble-audio-player" id="${playerId}_container">
@@ -965,7 +1073,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     </button>
                     <input type="range" class="bubble-seeker" id="${playerId}_seek" min="0" max="100" value="0">
                     <span class="bubble-time" id="${playerId}_time">0:00</span>
-                    <a href="${audioUrl}" download class="bubble-download-btn" title="Download audio (${dlExt})">
+                    <a href="${audioUrl}" download="amirlan_response${dlExt}" class="bubble-download-btn" title="Download audio (${dlExt})">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                             <polyline points="7 10 12 15 17 10"/>
@@ -973,6 +1081,18 @@ document.addEventListener("DOMContentLoaded", () => {
                         </svg>
                     </a>
                     <audio id="${playerId}_audio" src="${audioUrl}" preload="auto" style="display: none;"></audio>
+                </div>
+            `;
+        } else {
+            console.log("TTS service: Account limit exceeded. ");
+            audioPlayerHtml = `
+                <div class="bubble-tts-warning">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="8" x2="12" y2="12"/>
+                        <line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                    <span>TTS service: Account limit exceeded. </span>
                 </div>
             `;
         }
@@ -1002,24 +1122,62 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    // Memory cache for streaming audio blobs so browser hardware decoder can play WAV smoothly
+    const streamBlobUrlCache = new Map();
+
+    async function resolveAudioSource(audioUrl, containerEl = null) {
+        if (!audioUrl) return null;
+        if (!audioUrl.includes("/api/tts/stream")) {
+            return audioUrl;
+        }
+        if (streamBlobUrlCache.has(audioUrl)) {
+            return streamBlobUrlCache.get(audioUrl);
+        }
+        try {
+            const res = await fetch(audioUrl);
+            const blob = await res.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            streamBlobUrlCache.set(audioUrl, blobUrl);
+            if (containerEl) {
+                const dlBtn = containerEl.querySelector(".bubble-download-btn");
+                if (dlBtn) dlBtn.href = blobUrl;
+            }
+            return blobUrl;
+        } catch (err) {
+            console.warn("Failed to fetch stream blob, falling back to direct URL:", err);
+            return audioUrl;
+        }
+    }
+
     function setupBubbleAudioPlayer(playerId, audioUrl) {
         const audioEl = document.getElementById(`${playerId}_audio`);
         const playBtn = document.getElementById(`${playerId}_btn`);
         const seekEl = document.getElementById(`${playerId}_seek`);
         const timeEl = document.getElementById(`${playerId}_time`);
+        const containerEl = document.getElementById(`${playerId}_container`);
 
         if (!audioEl || !playBtn) return;
 
         const iconPlay = playBtn.querySelector(".icon-play");
         const iconPause = playBtn.querySelector(".icon-pause");
 
-        playBtn.addEventListener("click", () => {
+        playBtn.addEventListener("click", async () => {
             if (audioEl.paused) {
                 // Pause any other playing audio
                 if (currentlyPlayingAudio && currentlyPlayingAudio !== audioEl) {
                     currentlyPlayingAudio.pause();
                 }
                 currentlyPlayingAudio = audioEl;
+
+                // Ensure stream URL is loaded as blob for clean playback
+                if (audioUrl.includes("/api/tts/stream") && (!audioEl.src || audioEl.src.includes("/api/tts/stream"))) {
+                    try {
+                        const resolved = await resolveAudioSource(audioUrl, containerEl);
+                        if (resolved && audioEl.src !== resolved) {
+                            audioEl.src = resolved;
+                        }
+                    } catch (_) {}
+                }
 
                 audioEl.play().then(() => {
                     setOrbState("speaking", `Speaking • ${getSelectedVoice()} voice`);
@@ -1037,18 +1195,25 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         audioEl.ontimeupdate = () => {
-            if (audioEl.duration) {
+            if (audioEl.duration && isFinite(audioEl.duration)) {
                 const prog = (audioEl.currentTime / audioEl.duration) * 100;
                 seekEl.value = prog;
+                timeEl.textContent = formatSecs(audioEl.currentTime);
+            } else {
                 timeEl.textContent = formatSecs(audioEl.currentTime);
             }
         };
 
         seekEl.addEventListener("input", () => {
-            if (audioEl.duration) {
+            if (audioEl.duration && isFinite(audioEl.duration)) {
                 audioEl.currentTime = (seekEl.value / 100) * audioEl.duration;
             }
         });
+
+        audioEl.onpause = () => {
+            iconPlay.style.display = "block";
+            iconPause.style.display = "none";
+        };
 
         audioEl.onended = () => {
             iconPlay.style.display = "block";
@@ -1064,7 +1229,7 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     }
 
-    function autoplayNewestAudio(audioUrl) {
+    async function autoplayNewestAudio(audioUrl) {
         // Find newest audio in feed
         const allAudios = chatFeed.querySelectorAll("audio");
         if (allAudios.length > 0) {
@@ -1074,8 +1239,19 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             currentlyPlayingAudio = latestAudio;
 
-            const isWavAudio = latestAudio.src && (latestAudio.src.includes(".wav") || latestAudio.src.includes("/api/tts/stream"));
+            const isWavAudio = (audioUrl && (audioUrl.includes(".wav") || audioUrl.includes("/api/tts/stream")));
             const speakingLabel = isWavAudio ? "Speaking • Gemini Stream (.wav)" : "Speaking • Narakeet Batch (.m4a)";
+
+            // For streaming WAV endpoints, resolve to a Blob URL for instant native audio decoding
+            if (audioUrl && audioUrl.includes("/api/tts/stream")) {
+                try {
+                    const resolved = await resolveAudioSource(audioUrl, latestAudio.parentElement);
+                    if (resolved) {
+                        latestAudio.src = resolved;
+                    }
+                } catch (_) {}
+            }
+
             latestAudio.play().then(() => {
                 setOrbState("speaking", speakingLabel);
                 if (isCallActive && callVadStatus) {

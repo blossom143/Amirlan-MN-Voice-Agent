@@ -23,7 +23,7 @@ graph TD
         S1["Stage 1: Speech-to-Text (Chirp 3 mn-MN)"]
         S2["Stage 2: Intent Classification (Fast Pattern + LLM Fallback)"]
         S3["Stage 3: Hybrid Retrieval (FAISS + BM25 + Glossary)"]
-        S4["Stage 4: ReAct Decision (Gemini 2.5 Flash)"]
+        S4["Stage 4: Decision & Output (Gemini 2.5 Flash)"]
         S5["Stage 5: Response Generation & Dual TTS"]
         S6["Stage 6: Human Escalation Protocol"]
     end
@@ -81,7 +81,7 @@ graph TD
 | **1** | Call Intake | Google Cloud Chirp 3 (`mn-MN`) | Conformer-based speech-to-text with PII masking | < 2.0s |
 | **2** | Intent Understanding | Fast Regex Classifier + Gemini 2.5 Flash | Classifies banking category, topic, confidence, and search keywords | < 0.05s (Fast) / ~1.5s (LLM) |
 | **3** | Information Retrieval | FAISS + BM25 + Reciprocal Rank Fusion | Local hybrid retrieval over verified Khan Bank knowledge documents | < 0.01s |
-| **4** | Decision Making | Single-Pass ReAct Engine (Gemini 2.5 Flash) | Reasoning with strict recursion limit and banking boundaries | ~1.2s |
+| **4** | Decision & Output | Single-Pass ReAct Engine (Gemini 2.5 Flash) | Reasoning with strict 3.0s SLA timeout (auto-escalates to Stage 6 if exceeded), token tracking, and banking boundaries | ~1.2s |
 | **5** | Response & TTS | Dual TTS: Gemini 3.1 Flash Preview / Narakeet | Streaming 24kHz linear PCM or high-fidelity neural M4A | ~1.5s (Stream) / ~2.5s (Batch) |
 | **6** | Human Escalation | Protocol Engine | Routes complex transactions or unclear calls to 1800-1917 | Immediate |
 

@@ -2,7 +2,21 @@
 https://amirlan.onrender.com/
 
 ## Docs
-./docs/..
+- [System Architecture](docs/ARCHITECTURE.md)
+- [Operational Workflows](docs/WORKFLOWS.md)
+- [Decision Flow & Guardrails](docs/DECISION_FLOW.md)
+- [Local RAG & Vector Search](docs/RAG_AND_VECTOR_SEARCH.md)
+- [Stage-by-Stage Optimizations](docs/STAGE_OPTIMIZATIONS.md)
+
+## Technology Stack
+
+| Domain | Technologies & Components |
+| :--- | :--- |
+| **Languages** | • **Python 3.11+** (Backend server, RAG retriever, agent orchestration)<br/>• **JavaScript (ES6+)** (Browser Web Audio API, VAD loop, MediaRecorder, NDJSON stream consumer)<br/>• **HTML5 / CSS3** (Vanilla responsive dark-mode UI, live telemetry dashboard) |
+| **Key Frameworks & Libraries** | • **Web & Server:** Flask 3.x, Gunicorn (WSGI with chunked NDJSON streaming), Requests (persistent TCP session pooling)<br/>• **AI & RAG:** LangChain Core, `langchain-google-vertexai`, `google-genai` SDK, `google-cloud-speech` v2, FAISS (`faiss-cpu`)<br/>• **Audio & Science:** Web Audio API (AnalyserNode, AudioContext), NumPy, SciPy, Wave |
+| **Models & AI Services** | • **Speech-to-Text (STT):** Google Cloud Speech-to-Text v2 (**Chirp 3**, `mn-MN` language model)<br/>• **LLM & Reasoning:** Google **Gemini 2.5 Flash** (`gemini-2.5-flash` on Vertex AI `us-central1`, temperature: 0.0, zero thinking budget)<br/>• **Text-to-Speech (TTS):** **Narakeet Voice API** (Mongolian personas: *Ankhmaa* & *Ganbaatar*) and **Google Gemini 3.1 Flash Preview TTS** |
+| **Agentic Architecture** | • **6-Stage Deterministic-Agentic Pipeline:** Intake $\to$ Intent $\to$ Local RAG $\to$ Decision & Output $\to$ TTS $\to$ Human Escalation<br/>• **Single-Pass ReAct Decision Engine:** Unified reasoning & response formulation with strict JSON schema enforcement and token telemetry<br/>• **Hybrid Local RAG:** In-memory FAISS vector indexing combined with BM25 term weighting and bidirectional Mongolian banking glossary expansion (< 3ms latency)<br/>• **Multi-Tier Safety Guardrails:** Pre-LLM PII masking, Prompt Injection deflection, Profanity interception, Financial transaction boundaries, Low-Confidence (< 0.70) operator escalation, and Stage 4 Latency SLA circuit breaker (> 3.0s auto-escalation to Stage 6)<br/>• **Operational Safeguards:** Stage 4 Decision & Output SLA circuit breaker (> 3.0s auto-escalation to Stage 6), consecutive unclear audio circuit breaker, rate limiting (30 req/min), client-side barge-in interruption via `AbortController` |
+| **Infrastructure & Deployment** | • **Containers:** Production Linux Docker container (`python:3.11-slim`, ALSA/PulseAudio audio drivers, FFmpeg)<br/>• **Cloud Hosting:** Render.com PaaS and Google Cloud Run compatible<br/>• **Cloud AI Platform:** Google Cloud Platform (Vertex AI, Cloud Speech-to-Text v2)<br/>• **Multi-Source Authentication:** Auto-detects Application Default Credentials (ADC) from file paths, inline JSON strings, or base64-encoded environment variables (`GOOGLE_CREDENTIALS_BASE64`) |
 
 ## Setup
 

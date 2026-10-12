@@ -20,7 +20,8 @@ import tempfile
 import wave
 import struct
 import requests
-from typing import Dict, Any, Optional, Tuple, List
+import urllib.parse
+from typing import Dict, Any, Optional, Tuple, List, Generator
 from google import genai
 
 # Persistent HTTP session to reuse TCP connections across turns (Strategy 2)
@@ -884,7 +885,8 @@ class AmirlanVoicebot:
         self,
         user_query: str,
         intent_data: Dict[str, Any],
-        retrieval_data: Dict[str, Any]
+        retrieval_data: Dict[str, Any],
+        voice: Optional[str] = None
     ) -> Tuple[Dict[str, Any], str]:
         """
         Unified single-pass LangGraph ReAct agent reasoning and response synthesis.
@@ -910,6 +912,27 @@ class AmirlanVoicebot:
 
         verified_ctx = retrieval_data.get("verified_context", "")
 
+        # Prompt optimization: Concise rules for gTTS and optimized Narakeet, preserving unoptimized baseline
+        is_optimized_narakeet = False
+        is_unoptimized = False
+        if voice:
+            v_lower = voice.lower()
+            if "unoptimized" in v_lower:
+                is_unoptimized = True
+            elif ("narakeet" in v_lower or voice in ("Ankhmaa", "Ganbaatar")):
+                is_optimized_narakeet = True
+
+        if is_unoptimized:
+            sentence_rule = "Асуултад бүрэн гүйцэд, цэгцтэй, ойлгомжтой хариулна (хэт нуршихгүй, шаардлагатай мэдээллийг бүрэн багтаана)."
+            schema_hint = "[Асуултад дэлгэрэнгүй хариулсан тодорхой хариулт]"
+        elif is_optimized_narakeet:
+            sentence_rule = "Хамгийн ихдээ 1-2 товч өгүүлбэрээр хариулна (нийт 20-25 үгэнд, 150 тэмдэгтээс хэтрэхгүй). Хэрэглэгч тухайлан нэр зааж асуугаагүй бол салбаруудын нэрс, хаяг, тусгай хуваарийг дэлгэрүүлж тоочихгүй, зөвхөн ерөнхий товч мэдээллийг өгнө."
+            schema_hint = "[Хамгийн ихдээ 1-2 товч өгүүлбэр бүхий шууд хариулт]"
+        else:
+            # gTTS (Gemini TTS Kore / Puck) and standard optimized voices
+            sentence_rule = "Хамгийн ихдээ 1-2 товч өгүүлбэрээр хариулна (нийт 20-30 үгэнд, 180 тэмдэгтээс хэтрэхгүй). Хэрэглэгч тухайлан нэр зааж асуугаагүй бол салбаруудын нэрс, хаяг, тусгай хуваарийг дэлгэрүүлж тоочихгүй, зөвхөн ерөнхий товч мэдээллийг өгнө."
+            schema_hint = "[Хамгийн ихдээ 1-2 товч өгүүлбэр бүхий шууд хариулт]"
+
         prompt = f"""Та Хаан Банкны албан ёсны ухаалаг дуут туслах Амирлан байна.
 Хэрэглэгчийн асуултад ДАНДАА ЭЕЛДЭГ, АЛБАН ЁСНЫ, СЭТГЭЛД ХҮРСЭН МОНГОЛ ХЭЛЭЭР ХАРИУЛНА.
 
@@ -919,7 +942,8 @@ class AmirlanVoicebot:
 3. Хэрэв санхүүгийн гүйлгээ хийх, хувийн данс хаах хүсэлт, эсвэл мэдээлэл дутуу бол: decision = "escalate", reason = "Мэргэжилтэнд шилжүүлэх шаардлагатай".
 4. response_text нь дуут ярианд зориулагдсан тул:
    - Мэндчилгээний үг давтаж хэлэхгүй, асуултад шууд эелдэг, тодорхой хариулна.
-   - Нийт 1-2 өгүүлбэрт (хамгийн ихдээ 18-24 үгэнд, 130 тэмдэгтээс хэтрүүлэхгүй) маш товч шууд хариулна.
+   - {sentence_rule}
+   - Хэт нуршихгүй, олон салбарын нэрс, хаяг, жагсаалтыг нэг бүрчлэн тоочихгүй.
    - Элдэв од (*), зураас, хашилт, кодын тусгай тэмдэгт огт ашиглахгүй.
    - Төгсгөлд нь нэмэлт утас, лавлах давтаж дурдахгүй, зөвхөн асуултын шууд хариултыг өгнө.
 
@@ -933,7 +957,7 @@ class AmirlanVoicebot:
 {{
     "decision": "answer" эсвэл "escalate",
     "reason": "Шийдвэрийн үндэслэл (Монголоор 1 өгүүлбэр)",
-    "response_text": "[Зөвхөн асуултад шууд хариулсан тодорхой 1-2 өгүүлбэр]"
+    "response_text": "{schema_hint}"
 }}"""
 
         if not self.llm:
@@ -942,17 +966,76 @@ class AmirlanVoicebot:
         try:
             if not self.llm:
                 raise RuntimeError("LLM not initialized")
-            res = self.llm.invoke(prompt)
+            t_llm_start = time.time()
+
+            # Enforce strict 10.0s SLA timeout on LLM reasoning to prevent caller latency degradation
+            import concurrent.futures
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            future = executor.submit(self.llm.invoke, prompt)
+            try:
+                res = future.result(timeout=10.0)
+                executor.shutdown(wait=False)
+            except concurrent.futures.TimeoutError:
+                executor.shutdown(wait=False, cancel_futures=True)
+                llm_duration = round(time.time() - t_llm_start, 2)
+                self.log_event("Workflow", f"Stage 4 decision SLA exceeded: {llm_duration}s > 10.0s. Triggering Stage 6 escalation.", "WARNING")
+                decision = {
+                    "decision": "escalate",
+                    "reason": f"Шийдвэр гаргах хугацаа 10.0 секундээс хэтэрсэн ({llm_duration}s > 10.0s SLA) - Операторт шилжүүлэв.",
+                    "requires_human": True,
+                    "token_usage": {
+                        "prompt_tokens": 0,
+                        "output_tokens": 0,
+                        "total_tokens": 0,
+                        "tokens_per_sec": 0,
+                        "duration_sec": llm_duration
+                    }
+                }
+                return decision, self.frequent_phrases["escalation"]
+
+            llm_duration = max(0.01, time.time() - t_llm_start)
             content = res.content.strip()
             if content.startswith("```"):
                 content = re.sub(r"^```(?:json)?\s*", "", content)
                 content = re.sub(r"\s*```$", "", content)
             parsed = json.loads(content)
-            
+
+            # Extract exact token usage metadata from Gemini 2.5 Flash response
+            usage = getattr(res, "usage_metadata", None) or res.response_metadata.get("usage_metadata", {})
+            prompt_tokens = usage.get("input_tokens") or usage.get("prompt_token_count", 0)
+            output_tokens = usage.get("output_tokens") or usage.get("candidates_token_count", 0)
+            total_tokens = usage.get("total_tokens") or usage.get("total_token_count", 0)
+            tok_per_sec = round(output_tokens / llm_duration, 1)
+
+            # Check if total elapsed time in Stage 4 exceeded 10.0s SLA
+            total_s4_elapsed = time.time() - t_llm_start
+            if total_s4_elapsed > 10.0:
+                self.log_event("Workflow", f"Stage 4 elapsed time {total_s4_elapsed:.2f}s exceeded 10.0s SLA. Triggering Stage 6 escalation.", "WARNING")
+                decision = {
+                    "decision": "escalate",
+                    "reason": f"Шийдвэр гаргах хугацаа 10.0 секундээс хэтэрсэн ({round(total_s4_elapsed, 2)}s > 10.0s SLA) - Операторт шилжүүлэв.",
+                    "requires_human": True,
+                    "token_usage": {
+                        "prompt_tokens": prompt_tokens,
+                        "output_tokens": output_tokens,
+                        "total_tokens": total_tokens,
+                        "tokens_per_sec": tok_per_sec,
+                        "duration_sec": round(total_s4_elapsed, 2)
+                    }
+                }
+                return decision, self.frequent_phrases["escalation"]
+
             decision = {
                 "decision": parsed.get("decision", "answer"),
                 "reason": parsed.get("reason", "Банкны баталгаат мэдээллээр баталгаажсан."),
-                "requires_human": (parsed.get("decision") == "escalate")
+                "requires_human": (parsed.get("decision") == "escalate"),
+                "token_usage": {
+                    "prompt_tokens": prompt_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": total_tokens,
+                    "tokens_per_sec": tok_per_sec,
+                    "duration_sec": round(llm_duration, 2)
+                }
             }
             resp_text = parsed.get("response_text", "").strip()
             if not resp_text:
@@ -1000,8 +1083,10 @@ class AmirlanVoicebot:
         return [c.strip() for c in raw_chunks if c.strip()]
 
 
-    def _trim_for_tts(self, text: str, max_bytes: int = 320) -> str:
-        """Safely trims text to keep speech snappy and ultra-low latency (<1.2s synthesis time)."""
+    def _trim_for_tts(self, text: str, max_bytes: int = 800, max_chars: Optional[int] = 350) -> str:
+        """Safely trims text to keep speech snappy while ensuring full complete answers are spoken."""
+        if max_chars and len(text) > max_chars:
+            text = text[:max_chars]
         encoded = text.encode("utf-8")
         if len(encoded) <= max_bytes:
             return text
@@ -1063,7 +1148,7 @@ class AmirlanVoicebot:
             raise RuntimeError("Gemini 3.1 Flash TTS client is not initialized.")
 
         gemini_voice = self.GEMINI_VOICE_MAP.get(voice, voice if voice in self.GEMINI_VOICE_MAP else "Kore")
-        safe_text = self._trim_for_tts(text, max_bytes=400).strip()
+        safe_text = self._trim_for_tts(text, max_bytes=800, max_chars=350).strip()
         if not safe_text:
             return
 
@@ -1225,7 +1310,7 @@ class AmirlanVoicebot:
         if clean_voice not in valid_voices:
             clean_voice = "Ankhmaa"
 
-        safe_text = self._trim_for_tts(text, max_bytes=250).strip()
+        safe_text = self._trim_for_tts(text, max_bytes=800, max_chars=350).strip()
         if not safe_text:
             raise ValueError("Текст хоосон байна.")
 
@@ -1313,11 +1398,67 @@ class AmirlanVoicebot:
             self.log_event("TTS", f"Narakeet API HTTP {res.status_code}: {err_msg}", level="ERROR")
             raise RuntimeError(f"Narakeet алдаа ({res.status_code}): {err_msg}")
 
+    def synthesize_speech_narakeet_unoptimized(self, text: str, voice: str = "Ankhmaa") -> str:
+        """
+        Synthesizes Mongolian text into .m4a audio using Narakeet REST API WITHOUT ANY OPTIMIZATIONS:
+        - No persistent HTTP session (direct requests.post creating a fresh TCP & TLS handshake)
+        - No response caching or frequent phrase memoization (always performs live network synthesis)
+        - No chunked streaming writes (buffers full audio in memory before writing to disk)
+        - No text trimming / truncating (sends the raw full response to the remote API)
+        """
+        if not self.narakeet_api_key:
+            raise ValueError("NARAKEET_API_KEY орчны хувьсагч тохируулагдаагүй байна.")
+
+        clean_voice = voice.replace("narakeet:", "").replace(":unoptimized", "").strip() or "Ankhmaa"
+        raw_text = text.strip()
+        if not raw_text:
+            raise ValueError("Текст хоосон байна.")
+
+        filename = f"amirlan_unoptimized_{clean_voice}_{uuid.uuid4().hex[:8]}_{int(time.time())}.m4a"
+        file_path = os.path.join(self.output_dir, filename)
+
+        url = f"https://api.narakeet.com/text-to-speech/m4a?voice={clean_voice}"
+        headers = {
+            "x-api-key": self.narakeet_api_key,
+            "Content-Type": "text/plain; charset=utf-8",
+            "Accept": "application/octet-stream"
+        }
+
+        t_req_start = time.time()
+        # Direct one-shot requests.post (unoptimized: fresh TCP/TLS connection and non-streaming)
+        res = requests.post(
+            url,
+            data=raw_text.encode("utf-8"),
+            headers=headers,
+            stream=False,
+            timeout=60
+        )
+        tot_tts_time = round(time.time() - t_req_start, 3)
+
+        if res.status_code == 200 and "application/json" not in res.headers.get("content-type", ""):
+            with open(file_path, "wb") as f:
+                f.write(res.content)
+
+            self.log_event("TTS", f"Unoptimized batch TTS completed in {tot_tts_time}s ({len(res.content)}B, Narakeet {clean_voice})", meta={
+                "total_time": tot_tts_time,
+                "bytes": len(res.content),
+                "model": "narakeet-neural",
+                "voice": clean_voice,
+                "cached": False,
+                "optimized": False
+            })
+            return filename
+        else:
+            err_msg = res.text[:200]
+            self.log_event("TTS", f"Narakeet Unoptimized API HTTP {res.status_code}: {err_msg}", level="ERROR")
+            raise RuntimeError(f"Narakeet алдаа ({res.status_code}): {err_msg}")
+
     def synthesize_speech(self, text: str, voice: str = "gemini:Kore") -> Tuple[str, str, str]:
         """
         Dynamically dispatches text-to-speech to either:
         - 2 Gemini / Google TTS Streaming options: Kore (Female), Puck (Male) [.wav]
         - 2 Narakeet Batch options: Ankhmaa (Female), Ganbaatar (Male) [.m4a]
+        - 1 Unoptimized Narakeet Batch option: Ankhmaa (Female • Unoptimized) [.m4a]
 
         Returns:
             Tuple[filename, engine_label, format_ext]
@@ -1329,22 +1470,34 @@ class AmirlanVoicebot:
         )
 
         if is_narakeet:
+            if "unoptimized" in voice_str.lower():
+                fn = self.synthesize_speech_narakeet_unoptimized(text, voice="Ankhmaa")
+                return fn, "Narakeet Ankhmaa (Unoptimized Batch)", ".m4a"
             clean_voice = voice_str.replace("narakeet:", "").strip()
             if clean_voice not in ("Ankhmaa", "Ganbaatar"):
                 clean_voice = "Ankhmaa"
             fn = self.synthesize_speech_narakeet(text, voice=clean_voice)
-            return fn, f"Narakeet {clean_voice} (Batch)", ".m4a"
+            return fn, f"Narakeet {clean_voice} (Optimized Batch)", ".m4a"
         else:
             clean_voice = voice_str.replace("gemini:", "").replace("gtts:", "").strip()
             if clean_voice not in ("Kore", "Puck", "Aoede", "Leda", "Charon"):
                 clean_voice = "Kore"
-            fn = self.synthesize_speech_gemini_tts(text, voice=clean_voice)
-            return fn, f"Gemini 3.1 Flash {clean_voice} (Stream)", ".wav"
+            # Direct browser audio streaming via /api/tts/stream for Google / Gemini TTS
+            stream_url = f"/api/tts/stream?text={urllib.parse.quote(text.strip())}&voice={clean_voice}"
+            return stream_url, f"Gemini 3.1 Flash {clean_voice} (Direct Stream)", ".wav"
+
+    def _format_audio_url(self, audio_fn: Optional[str]) -> Optional[str]:
+        """Resolves audio filename or streaming endpoint into a client-accessible URL."""
+        if not audio_fn:
+            return None
+        if audio_fn.startswith("/"):
+            return audio_fn
+        return f"/audio/{audio_fn}"
 
     # =========================================================================
     # STAGE 6: Human Escalation Protocol
     # =========================================================================
-    def execute_escalation_protocol(self, user_query: str, intent_data: Dict[str, Any]) -> Dict[str, Any]:
+    def execute_escalation_protocol(self, user_query: str, intent_data: Dict[str, Any], reason: Optional[str] = None) -> Dict[str, Any]:
         """Provides bank-standard human operator handoff protocol details."""
         return {
             "escalation_triggered": True,
@@ -1353,16 +1506,27 @@ class AmirlanVoicebot:
             "intl_hotline": "+976 7515-1917",
             "priority": "VIP Priority Routing",
             "estimated_wait": "1 минут хүрэхгүй",
-            "message": "Хүсэлтийг амжилттай мэргэжилтний дараалалд шилжүүллээ. Та 1800-1917 луу шууд залгах боломжтой."
+            "message": "Хүсэлтийг амжилттай мэргэжилтний дараалалд шилжүүллээ. Та 1800-1917 луу шууд залгах боломжтой.",
+            "reason": reason or "Мэргэжилтэнд шилжүүлэх шаардлагатай"
         }
 
     # =========================================================================
     # MASTER PIPELINE (Stages 1 -> 6 Orchestration with All Guardrails)
     # =========================================================================
-    def run_full_pipeline(self, audio_bytes: Optional[bytes] = None, text_query: Optional[str] = None, voice: str = "Ankhmaa", is_call_mode: bool = False) -> Dict[str, Any]:
-        """Runs the complete 6-stage end-to-end voicebot workflow with multi-layered guardrails."""
+    def run_full_pipeline_stream(
+        self,
+        audio_bytes: Optional[bytes] = None,
+        text_query: Optional[str] = None,
+        voice: str = "Ankhmaa",
+        is_call_mode: bool = False
+    ) -> Generator[Dict[str, Any], None, None]:
+        """
+        Runs the complete 6-stage end-to-end voicebot workflow, yielding stage start
+        and stage completion events in real-time as NDJSON items.
+        """
         start_time = time.time()
         stage_logs = []
+        is_unoptimized = "unoptimized" in (voice or "").lower()
 
         # --- Operational Safeguard 1: Rate Limiting & Cost Control ---
         now = time.time()
@@ -1381,11 +1545,17 @@ class AmirlanVoicebot:
                 "Ярианы дээд хугацаа хүрсэн тул үйлчилгээг түргэн шуурхай шийдвэрлэхийн тулд "
                 "таны дуудлагыг мэргэжилтэнд шууд шилжүүллээ. Та 1800-1917 луу залгана уу."
             )
-            audio_fn, engine_lbl, _ = self.synthesize_speech(response_text, voice=voice)
-            return {
+            audio_fn = None
+            engine_lbl = "TTS"
+            try:
+                audio_fn, engine_lbl, _ = self.synthesize_speech(response_text, voice=voice)
+            except Exception as e:
+                self.log_event("TTS", f"Circuit breaker TTS error: {e}", level="WARN")
+            final_res = {
+                "success": True,
                 "transcript": "Ярианы дээд хугацаа хүрсэн.",
                 "response_text": response_text,
-                "audio_url": f"/audio/{audio_fn}",
+                "audio_url": self._format_audio_url(audio_fn),
                 "intent": {"category": "human_escalation", "topic": "Хугацаа хэтэрсэн", "confidence": 1.0},
                 "retrieval": {"search_query": "", "search_results": ""},
                 "decision": {"decision": "escalate", "reason": "Session turn limit exceeded (Circuit Breaker)"},
@@ -1394,8 +1564,15 @@ class AmirlanVoicebot:
                 "stage_logs": stage_logs,
                 "execution_time_sec": round(time.time() - start_time, 2)
             }
+            yield {"event": "stage_start", "stage": 1, "name": "Call Intake", "title": "Дуудлага хүлээн авах & Дуу таних (Chirp 3)"}
+            yield {"event": "stage_end", "stage": 1, "duration": 0.0, "details": "Session turn limit reached"}
+            yield {"event": "stage_start", "stage": 6, "name": "Human Escalation", "title": "Мэргэжилтэнд шилжүүлэх (Escalation Protocol)"}
+            yield {"event": "stage_end", "stage": 6, "duration": 0.01, "details": "Session turn limit exceeded (Circuit Breaker)", "status": "triggered"}
+            yield {"event": "complete", "data": final_res}
+            return
 
         # --- STAGE 1: Call Intake & Transcription ---
+        yield {"event": "stage_start", "stage": 1, "name": "Call Intake", "title": "Дуудлага хүлээн авах & Дуу таних (Chirp 3)"}
         stage1_start = time.time()
         if audio_bytes:
             raw_transcript = self.transcribe_audio_chirp3(audio_bytes)
@@ -1413,42 +1590,64 @@ class AmirlanVoicebot:
         if transcript != raw_transcript:
             self.log_event("Guardrail", "Sensitive digits masked in transcript (PII Protection)", level="INFO")
 
+        stage1_dur = round(time.time() - stage1_start, 2)
         stage_logs.append({
             "stage": 1,
             "name": "Call Intake",
             "title": "Дуудлага хүлээн авах & Дуу таних (Chirp 3)",
             "status": "completed",
-            "duration": round(time.time() - stage1_start, 2),
+            "duration": stage1_dur,
             "details": f"Танигдсан үгс (PII-Masked): \"{transcript}\""
         })
+        yield {"event": "stage_end", "stage": 1, "duration": stage1_dur, "details": f"Танигдсан үгс (PII-Masked): \"{transcript}\"", "transcript": transcript}
 
         # Step 4: Multi-Level Response Caching Lookup (<0.02s Instant Response)
         cache_key = f"{voice}:{transcript.strip().lower()}"
-        if self.caching_enabled and cache_key in self.response_cache:
+        if self.caching_enabled and not is_unoptimized and cache_key in self.response_cache:
             c_entry = self.response_cache[cache_key]
-            audio_p = os.path.join(self.output_dir, c_entry["audio_filename"])
-            if os.path.exists(audio_p) and os.path.getsize(audio_p) > 0:
+            c_audio = c_entry.get("audio_filename")
+            is_valid_audio = False
+            if c_audio:
+                if c_audio.startswith("/"):
+                    is_valid_audio = True
+                else:
+                    audio_p = os.path.join(self.output_dir, c_audio)
+                    if os.path.exists(audio_p) and os.path.getsize(audio_p) > 0:
+                        is_valid_audio = True
+            if is_valid_audio:
                 self.log_event("Cache", f"Instant full pipeline cache hit for '{transcript[:30]}' (0.01s)", meta={"cached": True, "voice": voice})
                 stage_logs.append({
                     "stage": 2, "name": "Intent Understanding", "title": "Зорилго ангилах (Fast RAG Intent Engine)",
                     "status": "completed", "duration": 0.0,
                     "details": f"Сэдэв: {c_entry['intent'].get('topic')} ({c_entry['intent'].get('category')}, Memoized)"
                 })
+                yield {"event": "stage_start", "stage": 2, "name": "Intent Understanding", "title": "Зорилго ангилах (Fast RAG Intent Engine)"}
+                yield {"event": "stage_end", "stage": 2, "duration": 0.0, "details": f"Сэдэв: {c_entry['intent'].get('topic')} ({c_entry['intent'].get('category')}, Memoized)"}
+
                 stage_logs.append({
                     "stage": 3, "name": "Information Retrieval", "title": "Мэдээлэл шүүх (FAISS Local RAG)",
                     "status": "completed", "duration": 0.001,
                     "details": f"{c_entry['retrieval'].get('search_results')} ({c_entry['retrieval'].get('source_url')})"
                 })
+                yield {"event": "stage_start", "stage": 3, "name": "Information Retrieval", "title": "Мэдээлэл шүүх (FAISS Local RAG)"}
+                yield {"event": "stage_end", "stage": 3, "duration": 0.001, "details": f"{c_entry['retrieval'].get('search_results')} ({c_entry['retrieval'].get('source_url')})"}
+
                 stage_logs.append({
-                    "stage": 4, "name": "Decision Making", "title": "Шийдвэр гаргах (ReAct Engine)",
+                    "stage": 4, "name": "Decision & Output", "title": "Шийдвэр гаргах & Хариу боловсруулах (Decision & Output)",
                     "status": "completed", "duration": 0.01,
                     "details": f"Шийдвэр: {c_entry['decision'].get('decision')} (Local Cache Hit)"
                 })
+                yield {"event": "stage_start", "stage": 4, "name": "Decision & Output", "title": "Шийдвэр гаргах & Хариу боловсруулах (Decision & Output)"}
+                yield {"event": "stage_end", "stage": 4, "duration": 0.01, "details": f"Шийдвэр: {c_entry['decision'].get('decision')} (Local Cache Hit)"}
+
                 stage_logs.append({
                     "stage": 5, "name": "Response Generation", "title": f"Хариу боловсруулах & TTS (Gemini 3.1 Flash TTS {voice})",
                     "status": "completed", "duration": 0.01,
                     "details": f"Дууны файл: {c_entry['audio_filename']} (Memoized Cache)"
                 })
+                yield {"event": "stage_start", "stage": 5, "name": "Response Generation", "title": f"Хариу боловсруулах & TTS ({voice})"}
+                yield {"event": "stage_end", "stage": 5, "duration": 0.01, "details": f"Дууны файл: {c_entry['audio_filename']} (Memoized Cache)"}
+
                 tot_time = round(time.time() - start_time, 2)
                 hist_rec = {
                     "id": uuid.uuid4().hex[:8],
@@ -1465,10 +1664,12 @@ class AmirlanVoicebot:
                 self.request_history.insert(0, hist_rec)
                 if len(self.request_history) > 60:
                     self.request_history.pop()
-                return {
+
+                final_cache_res = {
+                    "success": True,
                     "transcript": transcript,
                     "response_text": c_entry["response_text"],
-                    "audio_url": f"/audio/{c_entry['audio_filename']}",
+                    "audio_url": self._format_audio_url(c_entry["audio_filename"]),
                     "intent": c_entry["intent"],
                     "retrieval": c_entry["retrieval"],
                     "decision": c_entry["decision"],
@@ -1477,6 +1678,8 @@ class AmirlanVoicebot:
                     "stage_logs": stage_logs,
                     "execution_time_sec": tot_time
                 }
+                yield {"event": "complete", "data": final_cache_res}
+                return
 
         # --- Operational Safeguard 3: Consecutive Unclear Audio Circuit Breaker ---
         if transcript == "Дуу хоолой тодорхой сонсогдсонгүй.":
@@ -1492,11 +1695,23 @@ class AmirlanVoicebot:
                     "Таны яриа тодорхой сонсогдохгүй байгаа тул бид таныг оператортой шууд холбож байна. "
                     "Та 1800-1917 лавлах утсаар 24 цагийн турш холбогдох боломжтой."
                 )
-                audio_fn, engine_lbl, _ = self.synthesize_speech(response_text, voice=voice)
-                return {
+                yield {"event": "stage_start", "stage": 6, "name": "Human Escalation", "title": "Мэргэжилтэнд шилжүүлэх (Escalation Protocol)"}
+                yield {"event": "stage_end", "stage": 6, "duration": 0.01, "details": f"Circuit Breaker: {threshold} удаа тодорхойгүй", "status": "triggered"}
+
+                yield {"event": "stage_start", "stage": 5, "name": "Response Generation", "title": "Хариу боловсруулах & TTS"}
+                audio_fn = None
+                engine_lbl = "TTS"
+                try:
+                    audio_fn, engine_lbl, _ = self.synthesize_speech(response_text, voice=voice)
+                except Exception as e:
+                    self.log_event("TTS", f"Unclear circuit breaker TTS error: {e}", level="WARN")
+                yield {"event": "stage_end", "stage": 5, "duration": 0.4, "details": f"Дууны файл: {audio_fn or 'TTS service: Account limit exceeded.'}"}
+
+                final_unclear_res = {
+                    "success": True,
                     "transcript": transcript,
                     "response_text": response_text,
-                    "audio_url": f"/audio/{audio_fn}",
+                    "audio_url": self._format_audio_url(audio_fn),
                     "intent": intent,
                     "retrieval": retrieval,
                     "decision": decision,
@@ -1505,9 +1720,28 @@ class AmirlanVoicebot:
                     "stage_logs": stage_logs,
                     "execution_time_sec": round(time.time() - start_time, 2)
                 }
+                yield {"event": "complete", "data": final_unclear_res}
+                return
             elif is_call_mode:
                 response_text = "Уучлаарай, таны яриа сонсогдсонгүй. Та асуултаа дахин хэлнэ үү."
-                audio_fn, engine_lbl, _ = self.synthesize_speech(response_text, voice=voice)
+                yield {"event": "stage_start", "stage": 2, "name": "Intent Understanding", "title": "Зорилго ангилах (Fast RAG Intent Engine)"}
+                yield {"event": "stage_end", "stage": 2, "duration": 0.01, "details": "Дахин сонсох хүсэлт"}
+
+                yield {"event": "stage_start", "stage": 3, "name": "Information Retrieval", "title": "Мэдээлэл шүүх (FAISS Local RAG)"}
+                yield {"event": "stage_end", "stage": 3, "duration": 0.01, "details": "Тодорхойгүй яриа"}
+
+                yield {"event": "stage_start", "stage": 4, "name": "Decision Making", "title": "Шийдвэр гаргах (ReAct Engine)"}
+                yield {"event": "stage_end", "stage": 4, "duration": 0.01, "details": "Дахин сонсох хүсэлт"}
+
+                yield {"event": "stage_start", "stage": 5, "name": "Response Generation", "title": "Хариу боловсруулах & TTS"}
+                audio_fn = None
+                engine_lbl = "TTS"
+                try:
+                    audio_fn, engine_lbl, _ = self.synthesize_speech(response_text, voice=voice)
+                except Exception as e:
+                    self.log_event("TTS", f"Reprompt TTS error: {e}", level="WARN")
+                yield {"event": "stage_end", "stage": 5, "duration": 0.4, "details": f"Дууны файл: {audio_fn or 'TTS service: Account limit exceeded.'}"}
+
                 stage_logs.append({
                     "stage": 2, "name": "Intent Understanding", "title": "Зорилго ангилах (Fast RAG Intent Engine)",
                     "status": "completed", "duration": 0.01, "details": "Дахин сонсох хүсэлт"
@@ -1522,12 +1756,13 @@ class AmirlanVoicebot:
                 })
                 stage_logs.append({
                     "stage": 5, "name": "Response Generation", "title": f"Хариу боловсруулах & TTS ({engine_lbl})",
-                    "status": "completed", "duration": 0.4, "details": f"Дууны файл: {audio_fn}"
+                    "status": "completed" if audio_fn else "warning", "duration": 0.4, "details": f"Дууны файл: {audio_fn or 'TTS service: Account limit exceeded.'}"
                 })
-                return {
+                final_reprompt_res = {
+                    "success": True,
                     "transcript": transcript,
                     "response_text": response_text,
-                    "audio_url": f"/audio/{audio_fn}",
+                    "audio_url": self._format_audio_url(audio_fn),
                     "intent": {"category": "general_inquiry", "topic": "Дахин сонсох", "confidence": 0.9},
                     "retrieval": {"search_query": "", "search_results": "Тодорхойгүй яриа."},
                     "decision": {"decision": "answer", "reason": "Яриаг дахин сонсох хүсэлт."},
@@ -1536,6 +1771,8 @@ class AmirlanVoicebot:
                     "stage_logs": stage_logs,
                     "execution_time_sec": round(time.time() - start_time, 2)
                 }
+                yield {"event": "complete", "data": final_reprompt_res}
+                return
         else:
             self.consecutive_unclear_count = 0
 
@@ -1543,11 +1780,23 @@ class AmirlanVoicebot:
         injection_alert = self.check_prompt_injection(transcript)
         if injection_alert:
             response_text = injection_alert["response_text"]
-            audio_fn, engine_lbl, _ = self.synthesize_speech(response_text, voice=voice)
-            return {
+            yield {"event": "stage_start", "stage": 2, "name": "Security Guardrail", "title": "Prompt Injection Interception"}
+            yield {"event": "stage_end", "stage": 2, "duration": 0.0, "details": "Jailbreak/Prompt injection payload intercepted.", "status": "blocked"}
+
+            yield {"event": "stage_start", "stage": 5, "name": "Response Generation", "title": "Хариу боловсруулах & TTS"}
+            audio_fn = None
+            engine_lbl = "TTS"
+            try:
+                audio_fn, engine_lbl, _ = self.synthesize_speech(response_text, voice=voice)
+            except Exception as e:
+                self.log_event("TTS", f"Prompt injection TTS error: {e}", level="WARN")
+            yield {"event": "stage_end", "stage": 5, "duration": 0.4, "details": f"Дууны файл: {audio_fn or 'TTS service: Account limit exceeded.'}"}
+
+            final_inj_res = {
+                "success": True,
                 "transcript": transcript,
                 "response_text": response_text,
-                "audio_url": f"/audio/{audio_fn}",
+                "audio_url": self._format_audio_url(audio_fn),
                 "intent": {"category": "security_deflection", "topic": "Аюулгүй байдлын хамгаалалт", "confidence": 1.0, "is_escalation_needed": False},
                 "retrieval": {"search_query": "", "search_results": "Pre-LLM blocked."},
                 "decision": {"decision": "blocked", "reason": "Prompt injection detected.", "requires_human": False},
@@ -1559,6 +1808,8 @@ class AmirlanVoicebot:
                 }],
                 "execution_time_sec": round(time.time() - start_time, 2)
             }
+            yield {"event": "complete", "data": final_inj_res}
+            return
 
         # --- Input Guardrail 3: Profanity & Abuse Interception ---
         abuse_alert = self.check_profanity_and_abuse(transcript)
@@ -1567,11 +1818,27 @@ class AmirlanVoicebot:
             decision = {"decision": "escalate", "reason": "Зүй бус харилцааг операторт шилжүүллээ.", "requires_human": True}
             escalation_data = self.execute_escalation_protocol(transcript, intent)
             response_text = abuse_alert["response_text"]
-            audio_fn, engine_lbl, _ = self.synthesize_speech(response_text, voice=voice)
-            return {
+
+            yield {"event": "stage_start", "stage": 2, "name": "Abuse Guardrail", "title": "Profanity & Abuse Filter"}
+            yield {"event": "stage_end", "stage": 2, "duration": 0.0, "details": "Caller escalated due to inappropriate language.", "status": "triggered"}
+
+            yield {"event": "stage_start", "stage": 6, "name": "Human Escalation", "title": "Мэргэжилтэнд шилжүүлэх (Escalation Protocol)"}
+            yield {"event": "stage_end", "stage": 6, "duration": 0.01, "details": f"Лавлах утас: {escalation_data['hotline']}", "status": "triggered"}
+
+            yield {"event": "stage_start", "stage": 5, "name": "Response Generation", "title": "Хариу боловсруулах & TTS"}
+            audio_fn = None
+            engine_lbl = "TTS"
+            try:
+                audio_fn, engine_lbl, _ = self.synthesize_speech(response_text, voice=voice)
+            except Exception as e:
+                self.log_event("TTS", f"Abuse TTS error: {e}", level="WARN")
+            yield {"event": "stage_end", "stage": 5, "duration": 0.4, "details": f"Дууны файл: {audio_fn or 'TTS service: Account limit exceeded.'}"}
+
+            final_abuse_res = {
+                "success": True,
                 "transcript": transcript,
                 "response_text": response_text,
-                "audio_url": f"/audio/{audio_fn}",
+                "audio_url": self._format_audio_url(audio_fn),
                 "intent": intent,
                 "retrieval": {"search_query": "", "search_results": ""},
                 "decision": decision,
@@ -1583,6 +1850,8 @@ class AmirlanVoicebot:
                 }],
                 "execution_time_sec": round(time.time() - start_time, 2)
             }
+            yield {"event": "complete", "data": final_abuse_res}
+            return
 
         # --- Content Guardrail: Financial Compliance Boundaries ---
         compliance_alert = self.check_financial_compliance(transcript)
@@ -1591,11 +1860,27 @@ class AmirlanVoicebot:
             decision = {"decision": "escalate", "reason": "Санхүүгийн гүйлгээ хийх эрхгүй (Compliance Boundary).", "requires_human": True}
             escalation_data = self.execute_escalation_protocol(transcript, intent)
             response_text = compliance_alert["response_text"]
-            audio_fn, engine_lbl, _ = self.synthesize_speech(response_text, voice=voice)
-            return {
+
+            yield {"event": "stage_start", "stage": 2, "name": "Compliance Guardrail", "title": "Financial Compliance Policy"}
+            yield {"event": "stage_end", "stage": 2, "duration": 0.0, "details": "Autonomous financial execution prevented.", "status": "triggered"}
+
+            yield {"event": "stage_start", "stage": 6, "name": "Human Escalation", "title": "Мэргэжилтэнд шилжүүлэх (Escalation Protocol)"}
+            yield {"event": "stage_end", "stage": 6, "duration": 0.01, "details": f"Лавлах утас: {escalation_data['hotline']}", "status": "triggered"}
+
+            yield {"event": "stage_start", "stage": 5, "name": "Response Generation", "title": "Хариу боловсруулах & TTS"}
+            audio_fn = None
+            engine_lbl = "TTS"
+            try:
+                audio_fn, engine_lbl, _ = self.synthesize_speech(response_text, voice=voice)
+            except Exception as e:
+                self.log_event("TTS", f"Compliance TTS error: {e}", level="WARN")
+            yield {"event": "stage_end", "stage": 5, "duration": 0.4, "details": f"Дууны файл: {audio_fn or 'TTS service: Account limit exceeded.'}"}
+
+            final_comp_res = {
+                "success": True,
                 "transcript": transcript,
                 "response_text": response_text,
-                "audio_url": f"/audio/{audio_fn}",
+                "audio_url": self._format_audio_url(audio_fn),
                 "intent": intent,
                 "retrieval": {"search_query": "", "search_results": "Strict financial compliance boundary."},
                 "decision": decision,
@@ -1607,64 +1892,92 @@ class AmirlanVoicebot:
                 }],
                 "execution_time_sec": round(time.time() - start_time, 2)
             }
+            yield {"event": "complete", "data": final_comp_res}
+            return
 
         # --- STAGE 2: Intent Understanding ---
+        yield {"event": "stage_start", "stage": 2, "name": "Intent Understanding", "title": "Зорилго ангилах (Fast RAG Intent Engine)"}
         stage2_start = time.time()
         intent = self.understand_intent(transcript)
+        stage2_dur = round(time.time() - stage2_start, 2)
         stage_logs.append({
             "stage": 2,
             "name": "Intent Understanding",
             "title": "Зорилго ангилах (Fast RAG Intent Engine)",
             "status": "completed",
-            "duration": round(time.time() - stage2_start, 2),
+            "duration": stage2_dur,
             "details": f"Сэдэв: {intent.get('topic')} ({intent.get('category')}, Confidence: {intent.get('confidence', 0.9):.2f})"
         })
+        yield {"event": "stage_end", "stage": 2, "duration": stage2_dur, "details": f"Сэдэв: {intent.get('topic')} ({intent.get('category')})", "intent": intent}
 
         # --- STAGE 3: Information Retrieval ---
+        yield {"event": "stage_start", "stage": 3, "name": "Information Retrieval", "title": "Мэдээлэл шүүх (FAISS Local RAG)"}
         stage3_start = time.time()
         retrieval = self.retrieve_khanbank_info(transcript, intent.get("search_keywords", transcript))
+        stage3_dur = round(time.time() - stage3_start, 3)
         stage_logs.append({
             "stage": 3,
             "name": "Information Retrieval",
             "title": "Мэдээлэл шүүх (FAISS Local RAG)",
             "status": "completed",
-            "duration": round(time.time() - stage3_start, 3),
+            "duration": stage3_dur,
             "details": f"{retrieval.get('search_results')} ({retrieval.get('source_url')})"
         })
+        yield {"event": "stage_end", "stage": 3, "duration": stage3_dur, "details": f"{retrieval.get('search_results')} ({retrieval.get('source_url')})", "retrieval": retrieval}
 
-        # --- STAGES 4 & 5: Streamlined ReAct Reasoning & Response Generation ---
+        # --- STAGES 4: Decision & Output Stage ---
+        yield {"event": "stage_start", "stage": 4, "name": "Decision & Output", "title": "Шийдвэр гаргах & Хариу боловсруулах (Decision & Output)"}
         streamline_start = time.time()
-        decision, response_text = self.streamlined_agent_workflow(transcript, intent, retrieval)
-        is_escalation = decision.get("requires_human", False)
+        decision, response_text = self.streamlined_agent_workflow(transcript, intent, retrieval, voice=voice)
         streamline_dur = time.time() - streamline_start
+        decision_duration = round(streamline_dur, 2)
 
-        decision_duration = round(streamline_dur * 0.45, 2)
+        # Enforce Latency SLA Guardrail: If Stage 4 takes longer than 10.0 seconds, force Stage 6 escalation
+        if streamline_dur > 10.0 and not decision.get("requires_human"):
+            decision["decision"] = "escalate"
+            decision["reason"] = f"Шийдвэр гаргах хугацаа 10.0 секундээс хэтэрсэн ({decision_duration}s > 10.0s SLA) - Операторт шилжүүлэв."
+            decision["requires_human"] = True
+            response_text = self.frequent_phrases["escalation"]
+
+        is_escalation = decision.get("requires_human", False)
+
+        tok_info = ""
+        tu = decision.get("token_usage")
+        if tu and tu.get("output_tokens"):
+            tok_info = f" ({tu['output_tokens']} tokens, {tu.get('tokens_per_sec', 0)} tok/s)"
+
+        stage4_details = f"Шийдвэр: {decision.get('decision')}{tok_info} - {decision.get('reason')}"
         stage_logs.append({
             "stage": 4,
-            "name": "Decision Making",
-            "title": "Шийдвэр гаргах (ReAct Engine)",
-            "status": "completed",
+            "name": "Decision & Output",
+            "title": "Шийдвэр гаргах & Хариу боловсруулах (Decision & Output)",
+            "status": "escalated" if is_escalation else "completed",
             "duration": decision_duration,
-            "details": f"Шийдвэр: {decision.get('decision')} - {decision.get('reason')}"
+            "details": stage4_details,
+            "token_usage": tu
         })
+        yield {"event": "stage_end", "stage": 4, "duration": decision_duration, "details": stage4_details, "decision": decision}
 
         # --- STAGE 6 (if triggered) ---
         escalation_data = None
         if is_escalation:
+            yield {"event": "stage_start", "stage": 6, "name": "Human Escalation", "title": "Мэргэжилтэнд шилжүүлэх (Escalation Protocol)"}
             stage6_start = time.time()
-            escalation_data = self.execute_escalation_protocol(transcript, intent)
+            escalation_data = self.execute_escalation_protocol(transcript, intent, reason=decision.get("reason"))
+            s6_dur = round(time.time() - stage6_start, 2)
             stage_logs.append({
                 "stage": 6,
                 "name": "Human Escalation",
                 "title": "Мэргэжилтэнд шилжүүлэх (Escalation Protocol)",
                 "status": "triggered",
-                "duration": round(time.time() - stage6_start, 2),
-                "details": f"Лавлах утас: {escalation_data['hotline']} ({escalation_data['department']})"
+                "duration": s6_dur,
+                "details": f"Лавлах утас: {escalation_data['hotline']} ({escalation_data['department']}) - {decision.get('reason')}"
             })
+            yield {"event": "stage_end", "stage": 6, "duration": s6_dur, "details": f"Лавлах утас: {escalation_data['hotline']} ({escalation_data['department']})", "status": "triggered"}
 
         # --- STAGE 5: Response Generation & Sentence-Level TTS ---
+        yield {"event": "stage_start", "stage": 5, "name": "Response Generation", "title": "Хариу боловсруулах & TTS"}
         stage5_start = time.time()
-        text_gen_duration = round(streamline_dur * 0.55, 2)
         audio_filename = None
         audio_error = None
         engine_label = "TTS"
@@ -1672,19 +1985,27 @@ class AmirlanVoicebot:
             audio_filename, engine_label, _ = self.synthesize_speech(response_text, voice=voice)
         except Exception as e:
             audio_error = str(e)
+            self.log_event("TTS", f"Speech synthesis error: {e}", level="WARN")
 
-        stage5_total_duration = round(text_gen_duration + (time.time() - stage5_start), 2)
+        # Record true Stage 5 duration (uninflated)
+        stage5_total_duration = round(time.time() - stage5_start, 2)
+        display_audio_label = (
+            f"Шууд дамжуулалт (Gemini {voice.replace('gemini:', '')} • Live Stream)"
+            if (audio_filename and audio_filename.startswith("/api/tts/stream"))
+            else (audio_filename if audio_filename else (audio_error or 'TTS service: Account limit exceeded.'))
+        )
         stage_logs.append({
             "stage": 5,
             "name": "Response Generation",
             "title": f"Хариу боловсруулах & TTS ({engine_label})",
             "status": "completed" if audio_filename else "warning",
             "duration": stage5_total_duration,
-            "details": f"Дууны файл: {audio_filename if audio_filename else audio_error}"
+            "details": f"Дууны файл: {display_audio_label}"
         })
+        yield {"event": "stage_end", "stage": 5, "duration": stage5_total_duration, "details": f"Дууны файл: {display_audio_label}"}
 
         # Step 4: Store in response_cache for subsequent sub-second invocations
-        if self.caching_enabled and audio_filename and not is_escalation:
+        if self.caching_enabled and audio_filename and not is_escalation and not is_unoptimized:
             self.response_cache[cache_key] = {
                 "response_text": response_text,
                 "audio_filename": audio_filename,
@@ -1700,7 +2021,7 @@ class AmirlanVoicebot:
         # Telemetry record for Developer Mode metrics history
         is_cache_hit = False
         stage5_dur = next((s["duration"] for s in stage_logs if s["stage"] == 5), 0)
-        if stage5_dur < 0.25 and audio_filename and "amirlan_cache_" in audio_filename:
+        if stage5_dur < 0.25 and audio_filename and ("amirlan_cache_" in audio_filename or "/api/tts/stream" in audio_filename):
             is_cache_hit = True
 
         history_record = {
@@ -1709,10 +2030,10 @@ class AmirlanVoicebot:
             "query": transcript,
             "voice": voice,
             "stages": {
-                "intake": stage_logs[0]["duration"] if len(stage_logs) > 0 else 0,
-                "intent": stage_logs[1]["duration"] if len(stage_logs) > 1 else 0,
-                "retrieval": stage_logs[2]["duration"] if len(stage_logs) > 2 else 0,
-                "decision": stage_logs[3]["duration"] if len(stage_logs) > 3 else 0,
+                "intake": next((s["duration"] for s in stage_logs if s["stage"] == 1), 0),
+                "intent": next((s["duration"] for s in stage_logs if s["stage"] == 2), 0),
+                "retrieval": next((s["duration"] for s in stage_logs if s["stage"] == 3), 0),
+                "decision": next((s["duration"] for s in stage_logs if s["stage"] == 4), 0),
                 "tts": stage5_dur,
             },
             "total_duration": total_time,
@@ -1727,10 +2048,11 @@ class AmirlanVoicebot:
 
         self.log_event("Pipeline", f"Pipeline finished in {total_time}s (TTS: {stage5_dur}s, Cache: {is_cache_hit})")
 
-        return {
+        final_response_payload = {
+            "success": True,
             "transcript": transcript,
             "response_text": response_text,
-            "audio_url": f"/audio/{audio_filename}" if audio_filename else None,
+            "audio_url": self._format_audio_url(audio_filename),
             "intent": intent,
             "retrieval": retrieval,
             "decision": decision,
@@ -1739,6 +2061,21 @@ class AmirlanVoicebot:
             "stage_logs": stage_logs,
             "execution_time_sec": total_time
         }
+        yield {"event": "complete", "data": final_response_payload}
+
+    def run_full_pipeline(
+        self,
+        audio_bytes: Optional[bytes] = None,
+        text_query: Optional[str] = None,
+        voice: str = "Ankhmaa",
+        is_call_mode: bool = False
+    ) -> Dict[str, Any]:
+        """Runs the complete 6-stage end-to-end voicebot workflow synchronously."""
+        final_result = None
+        for event in self.run_full_pipeline_stream(audio_bytes=audio_bytes, text_query=text_query, voice=voice, is_call_mode=is_call_mode):
+            if event.get("event") == "complete":
+                final_result = event.get("data")
+        return final_result or {}
 
     def get_metrics_summary(self) -> Dict[str, Any]:
         """Calculates aggregated performance and SLA metrics across requests."""
