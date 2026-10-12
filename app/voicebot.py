@@ -968,20 +968,20 @@ class AmirlanVoicebot:
                 raise RuntimeError("LLM not initialized")
             t_llm_start = time.time()
 
-            # Enforce strict 10.0s SLA timeout on LLM reasoning to prevent caller latency degradation
+            # Enforce strict 3.0s SLA timeout on LLM reasoning to prevent caller latency degradation
             import concurrent.futures
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
             future = executor.submit(self.llm.invoke, prompt)
             try:
-                res = future.result(timeout=10.0)
+                res = future.result(timeout=3.0)
                 executor.shutdown(wait=False)
             except concurrent.futures.TimeoutError:
                 executor.shutdown(wait=False, cancel_futures=True)
                 llm_duration = round(time.time() - t_llm_start, 2)
-                self.log_event("Workflow", f"Stage 4 decision SLA exceeded: {llm_duration}s > 10.0s. Triggering Stage 6 escalation.", "WARNING")
+                self.log_event("Workflow", f"Stage 4 decision SLA exceeded: {llm_duration}s > 3.0s. Triggering Stage 6 escalation.", "WARNING")
                 decision = {
                     "decision": "escalate",
-                    "reason": f"Шийдвэр гаргах хугацаа 10.0 секундээс хэтэрсэн ({llm_duration}s > 10.0s SLA) - Операторт шилжүүлэв.",
+                    "reason": f"Шийдвэр гаргах хугацаа 3.0 секундээс хэтэрсэн ({llm_duration}s > 3.0s SLA) - Операторт шилжүүлэв.",
                     "requires_human": True,
                     "token_usage": {
                         "prompt_tokens": 0,
@@ -1007,13 +1007,13 @@ class AmirlanVoicebot:
             total_tokens = usage.get("total_tokens") or usage.get("total_token_count", 0)
             tok_per_sec = round(output_tokens / llm_duration, 1)
 
-            # Check if total elapsed time in Stage 4 exceeded 10.0s SLA
+            # Check if total elapsed time in Stage 4 exceeded 3.0s SLA
             total_s4_elapsed = time.time() - t_llm_start
-            if total_s4_elapsed > 10.0:
-                self.log_event("Workflow", f"Stage 4 elapsed time {total_s4_elapsed:.2f}s exceeded 10.0s SLA. Triggering Stage 6 escalation.", "WARNING")
+            if total_s4_elapsed > 3.0:
+                self.log_event("Workflow", f"Stage 4 elapsed time {total_s4_elapsed:.2f}s exceeded 3.0s SLA. Triggering Stage 6 escalation.", "WARNING")
                 decision = {
                     "decision": "escalate",
-                    "reason": f"Шийдвэр гаргах хугацаа 10.0 секундээс хэтэрсэн ({round(total_s4_elapsed, 2)}s > 10.0s SLA) - Операторт шилжүүлэв.",
+                    "reason": f"Шийдвэр гаргах хугацаа 3.0 секундээс хэтэрсэн ({round(total_s4_elapsed, 2)}s > 3.0s SLA) - Операторт шилжүүлэв.",
                     "requires_human": True,
                     "token_usage": {
                         "prompt_tokens": prompt_tokens,
@@ -1932,10 +1932,10 @@ class AmirlanVoicebot:
         streamline_dur = time.time() - streamline_start
         decision_duration = round(streamline_dur, 2)
 
-        # Enforce Latency SLA Guardrail: If Stage 4 takes longer than 10.0 seconds, force Stage 6 escalation
-        if streamline_dur > 10.0 and not decision.get("requires_human"):
+        # Enforce Latency SLA Guardrail: If Stage 4 takes longer than 3.0 seconds, force Stage 6 escalation
+        if streamline_dur > 3.0 and not decision.get("requires_human"):
             decision["decision"] = "escalate"
-            decision["reason"] = f"Шийдвэр гаргах хугацаа 10.0 секундээс хэтэрсэн ({decision_duration}s > 10.0s SLA) - Операторт шилжүүлэв."
+            decision["reason"] = f"Шийдвэр гаргах хугацаа 3.0 секундээс хэтэрсэн ({decision_duration}s > 3.0s SLA) - Операторт шилжүүлэв."
             decision["requires_human"] = True
             response_text = self.frequent_phrases["escalation"]
 
