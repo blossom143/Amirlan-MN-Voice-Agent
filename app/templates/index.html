@@ -665,7 +665,6 @@
                                     </svg>
                                     <span>Live Voice Call</span>
                                 </button>
-                                <button class="mode-btn" data-mode="browser" id="tabBrowserMic">Browser Mic</button>
                                 <button class="mode-btn" data-mode="desktop" id="tabDesktopMic">Hardware Mic</button>
                                 <button class="mode-btn" data-mode="upload" id="tabUpload">Upload Audio</button>
                                 <button class="mode-btn" data-mode="text" id="tabText">Text Query</button>
@@ -771,7 +770,7 @@
     </div>
 
     <!-- Client Script -->
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}?v=3.0"></script>
 </body>
 
 </html>

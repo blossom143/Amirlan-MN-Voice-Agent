@@ -19,7 +19,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Mode Tabs
     const tabVoiceCall = document.getElementById("tabVoiceCall");
-    const tabBrowserMic = document.getElementById("tabBrowserMic");
     const tabDesktopMic = document.getElementById("tabDesktopMic");
     const tabUpload = document.getElementById("tabUpload");
     const tabText = document.getElementById("tabText");
@@ -66,12 +65,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // --- State Variables ---
-    let currentInputMode = "call"; // 'call' | 'browser' | 'desktop' | 'upload' | 'text'
-    let mediaRecorder = null;
-    let audioChunks = [];
-    let isRecording = false;
-    let recTimerInterval = null;
-    let recSeconds = 0;
+    let currentInputMode = "call"; // 'call' | 'desktop' | 'upload' | 'text'
 
     // Continuous Real-Time Voice Call State Engine (VAD + Barge-In)
     let isCallActive = false;
@@ -110,7 +104,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // =========================================================================
     // 1. INPUT MODE SELECTION & ICON CONTROLLER
     // =========================================================================
-    const modeTabs = [tabVoiceCall, tabBrowserMic, tabDesktopMic, tabUpload, tabText];
+    const modeTabs = [tabVoiceCall, tabDesktopMic, tabUpload, tabText];
 
     function updateCallIcon(isInCall) {
         if (!mainRecordIcon) return;
@@ -169,14 +163,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 updateCallIcon(false);
                 setOrbState("", "Ready to Call");
             }
-        } else if (mode === "browser") {
-            recordBtnLabel.textContent = isRecording ? "End call" : "Start Voice Recording";
-            if (isRecording) {
-                mainRecordBtn.classList.add("recording", "btn-end-call");
-                updateCallIcon(true);
-            } else {
-                updateMicIcon();
-            }
         } else if (mode === "desktop") {
             recordBtnLabel.textContent = "Hardware Mic (5s)";
             updateMicIcon();
@@ -190,7 +176,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (tabVoiceCall) tabVoiceCall.addEventListener("click", () => setInputMode("call"));
-    if (tabBrowserMic) tabBrowserMic.addEventListener("click", () => setInputMode("browser"));
     if (tabDesktopMic) tabDesktopMic.addEventListener("click", () => setInputMode("desktop"));
     if (tabUpload) tabUpload.addEventListener("click", () => {
         setInputMode("upload");
@@ -673,88 +658,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // =========================================================================
-    // 5. BROWSER MICROPHONE RECORDING (Phone & PC)
-    // =========================================================================
-    async function startBrowserRecording() {
-        primeAudioContext();
-        try {
-            micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            audioChunks = [];
-
-            let mimeType = "audio/webm";
-            if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
-                mimeType = "audio/webm;codecs=opus";
-            } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
-                mimeType = "audio/mp4";
-            }
-
-            mediaRecorder = new MediaRecorder(micStream, { mimeType });
-
-            mediaRecorder.ondataavailable = (event) => {
-                if (event.data && event.data.size > 0) {
-                    audioChunks.push(event.data);
-                }
-            };
-
-            mediaRecorder.onstop = () => {
-                const audioBlob = new Blob(audioChunks, { type: mimeType });
-                sendAudioBlobToPipeline(audioBlob);
-                if (micStream) {
-                    micStream.getTracks().forEach(track => track.stop());
-                }
-                stopVisualizer();
-            };
-
-            mediaRecorder.start(200);
-            isRecording = true;
-
-            setOrbState("listening", "Listening • Speak now...");
-            mainRecordBtn.classList.add("recording", "btn-end-call");
-            recordBtnLabel.textContent = "End call";
-            updateCallIcon(true);
-
-            initVisualizer(micStream);
-            startRecTimer();
-
-        } catch (err) {
-            console.error("Mic access error:", err);
-            alert("Microphone access is required to capture voice.");
-            isRecording = false;
-        }
-    }
-
-    function stopBrowserRecording() {
-        if (mediaRecorder && isRecording) {
-            mediaRecorder.stop();
-            isRecording = false;
-            stopRecTimer();
-            setOrbState("analyzing", "Transcribing & Reasoning (Chirp 3 • Gemini)...");
-            mainRecordBtn.classList.remove("recording", "btn-end-call");
-            recordBtnLabel.textContent = "Processing...";
-        }
-    }
-
-    function startRecTimer() {
-        recSeconds = 0;
-        if (recordingTimer) recordingTimer.style.display = "inline-flex";
-        recTimerInterval = setInterval(() => {
-            recSeconds++;
-            const m = String(Math.floor(recSeconds / 60)).padStart(2, "0");
-            const s = String(recSeconds % 60).padStart(2, "0");
-            if (timerDigits) timerDigits.textContent = `${m}:${s}`;
-            if (recSeconds >= 45) stopBrowserRecording();
-        }, 1000);
-    }
-
-    function stopRecTimer() {
-        if (recTimerInterval) {
-            clearInterval(recTimerInterval);
-            recTimerInterval = null;
-        }
-        if (recordingTimer) recordingTimer.style.display = "none";
-    }
-
-    // =========================================================================
     // 6. PIPELINE API EXECUTION
     // =========================================================================
     async function sendAudioBlobToPipeline(audioBlob) {
@@ -793,10 +696,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 mainRecordBtn.classList.add("btn-call-start");
                 updateCallIcon(false);
                 setOrbState("", "Ready to Call");
-            } else {
-                recordBtnLabel.textContent = "Start Voice Recording";
-                mainRecordBtn.classList.remove("recording", "btn-end-call");
+            } else if (currentInputMode === "desktop") {
+                recordBtnLabel.textContent = "Hardware Mic (5s)";
                 updateMicIcon();
+                setOrbState("", "Ready to Listen");
+            } else if (currentInputMode === "upload") {
+                recordBtnLabel.textContent = "Select Audio File";
+                updateUploadIcon();
+                setOrbState("", "Ready to Listen");
+            } else if (currentInputMode === "text") {
+                recordBtnLabel.textContent = "Send Text Query";
+                updateSendIcon();
                 setOrbState("", "Ready to Listen");
             }
         }
@@ -827,7 +737,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function processUploadedAudioFile(file) {
         primeAudioContext();
-        setInputMode("browser");
+        setInputMode("upload");
         setOrbState("analyzing", `Processing audio: ${file.name}...`);
         startPipelineTimers();
 
@@ -920,12 +830,15 @@ document.addEventListener("DOMContentLoaded", () => {
             mainRecordBtn.classList.remove("btn-end-call");
             mainRecordBtn.classList.add("btn-call-start");
             updateCallIcon(false);
-        } else if (currentInputMode === "browser") {
-            recordBtnLabel.textContent = "Start Voice Recording";
-            mainRecordBtn.classList.remove("recording", "btn-end-call");
+        } else if (currentInputMode === "desktop") {
+            recordBtnLabel.textContent = "Hardware Mic (5s)";
             updateMicIcon();
-        } else {
-            recordBtnLabel.textContent = "Start Voice Recording";
+        } else if (currentInputMode === "upload") {
+            recordBtnLabel.textContent = "Select Audio File";
+            updateUploadIcon();
+        } else if (currentInputMode === "text") {
+            recordBtnLabel.textContent = "Send Text Query";
+            updateSendIcon();
         }
 
         if (!data.success) {
@@ -1651,12 +1564,6 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             if (currentInputMode === "call") {
                 startVoiceCall();
-            } else if (currentInputMode === "browser") {
-                if (isRecording) {
-                    stopBrowserRecording();
-                } else {
-                    startBrowserRecording();
-                }
             } else if (currentInputMode === "desktop") {
                 triggerHardwareRecording();
             } else if (currentInputMode === "upload") {
