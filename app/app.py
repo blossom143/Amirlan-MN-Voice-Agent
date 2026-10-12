@@ -61,7 +61,8 @@ def process_voice():
             print(f"Warning: Failed to save input audio: {save_err}")
 
         voice = request.form.get("voice", "Ankhmaa").strip()
-        result = voicebot.run_full_pipeline(audio_bytes=audio_bytes, voice=voice)
+        is_call_mode = request.form.get("is_call_mode", "false").lower() in ("true", "1")
+        result = voicebot.run_full_pipeline(audio_bytes=audio_bytes, voice=voice, is_call_mode=is_call_mode)
         return jsonify({"success": True, **result})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500

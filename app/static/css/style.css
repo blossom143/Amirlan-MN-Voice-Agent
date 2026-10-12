@@ -1365,6 +1365,122 @@ body {
     box-shadow: 0 2px 8px rgba(255, 137, 40, 0.3);
 }
 
+.mode-call-tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #ecfdf5;
+    border-color: rgba(16, 185, 129, 0.4);
+    color: #065f46;
+    font-weight: 700;
+}
+
+.mode-call-tab-btn:hover {
+    background: #d1fae5;
+    border-color: #10b981;
+    color: #047857;
+}
+
+.mode-call-tab-btn.active {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+    border-color: #059669 !important;
+    color: #ffffff !important;
+    box-shadow: 0 3px 12px rgba(16, 185, 129, 0.35) !important;
+}
+
+.mode-call-tab-btn .mode-icon-svg {
+    width: 13px;
+    height: 13px;
+}
+
+/* Live Voice Call HUD Banner */
+.call-hud-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 16px;
+    background: linear-gradient(135deg, rgba(236, 253, 245, 0.95) 0%, rgba(240, 253, 250, 0.95) 100%);
+    border: 1.5px solid rgba(16, 185, 129, 0.4);
+    border-radius: var(--radius-md);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.1);
+    animation: fadeInMsg 0.25s ease-out;
+}
+
+.call-hud-left {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+
+.call-pulse-dot {
+    width: 10px;
+    height: 10px;
+    background: #10b981;
+    border-radius: 50%;
+    box-shadow: 0 0 10px #10b981;
+    animation: listeningPulse 1.2s infinite ease-in-out;
+}
+
+.call-hud-title {
+    font-size: 0.82rem;
+    font-weight: 800;
+    color: #065f46;
+}
+
+.call-timer-badge {
+    padding: 2px 8px;
+    background: rgba(16, 185, 129, 0.15);
+    border-radius: var(--radius-full);
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: #047857;
+}
+
+.call-hud-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.call-vad-status {
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: #047857;
+}
+
+.barge-in-tag {
+    font-size: 0.7rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    padding: 2px 7px;
+    background: #fef3c7;
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    border-radius: var(--radius-full);
+    color: #b45309;
+}
+
+.primary-action-btn.btn-call-start {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    box-shadow: 0 4px 18px rgba(16, 185, 129, 0.4);
+}
+
+.primary-action-btn.btn-call-start:hover {
+    box-shadow: 0 8px 24px rgba(16, 185, 129, 0.55);
+}
+
+.primary-action-btn.btn-end-call {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
+    box-shadow: 0 4px 18px rgba(239, 68, 68, 0.45) !important;
+    animation: listeningPulse 1.4s infinite alternate;
+}
+
+.primary-action-btn.btn-end-call:hover {
+    background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%) !important;
+    box-shadow: 0 8px 26px rgba(239, 68, 68, 0.6) !important;
+}
+
 .state-pill {
     display: flex;
     align-items: center;

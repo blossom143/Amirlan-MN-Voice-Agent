@@ -18,6 +18,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const timerDigits = document.getElementById("timerDigits");
 
     // Mode Tabs
+    const tabVoiceCall = document.getElementById("tabVoiceCall");
     const tabBrowserMic = document.getElementById("tabBrowserMic");
     const tabDesktopMic = document.getElementById("tabDesktopMic");
     const tabUpload = document.getElementById("tabUpload");
@@ -26,6 +27,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const textInputWrapper = document.getElementById("textInputWrapper");
     const textQueryInput = document.getElementById("textQueryInput");
     const sendTextBtn = document.getElementById("sendTextBtn");
+
+    // Live Voice Call HUD Elements
+    const callHudBanner = document.getElementById("callHudBanner");
+    const callHudTitle = document.getElementById("callHudTitle");
+    const callDurationTimer = document.getElementById("callDurationTimer");
+    const callVadStatus = document.getElementById("callVadStatus");
+    const bargeInTag = document.getElementById("bargeInTag");
+    const vadStatusPill = document.getElementById("vadStatusPill");
+    const mainRecordIcon = document.getElementById("mainRecordIcon");
 
     // Stepper & Live Timers
     const totalTimeBadge = document.getElementById("totalTimeBadge");
@@ -55,12 +65,28 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // --- State Variables ---
-    let currentInputMode = "browser"; // 'browser' | 'desktop' | 'upload' | 'text'
+    let currentInputMode = "call"; // 'call' | 'browser' | 'desktop' | 'upload' | 'text'
     let mediaRecorder = null;
     let audioChunks = [];
     let isRecording = false;
     let recTimerInterval = null;
     let recSeconds = 0;
+
+    // Continuous Real-Time Voice Call State Engine (VAD + Barge-In)
+    let isCallActive = false;
+    let callStartTime = 0;
+    let callTimerInterval = null;
+    let vadStream = null;
+    let vadAudioCtx = null;
+    let vadAnalyser = null;
+    let vadRecorder = null;
+    let vadChunks = [];
+    let vadAnimFrame = null;
+    let isUserSpeaking = false;
+    let speechStartTimestamp = 0;
+    let lastSoundTimestamp = 0;
+    let consecutiveSpeechFrames = 0;
+    let isTurnInFlight = false;
 
     // Canvas & Web Audio API
     let audioCtx = null;
@@ -81,11 +107,38 @@ document.addEventListener("DOMContentLoaded", () => {
     let currentlyPlayingAudio = null;
 
     // =========================================================================
-    // 1. INPUT MODE SELECTION
+    // 1. INPUT MODE SELECTION & ICON CONTROLLER
     // =========================================================================
-    const modeTabs = [tabBrowserMic, tabDesktopMic, tabUpload, tabText];
+    const modeTabs = [tabVoiceCall, tabBrowserMic, tabDesktopMic, tabUpload, tabText];
+
+    function updateCallIcon(isInCall) {
+        if (!mainRecordIcon) return;
+        if (isInCall) {
+            mainRecordIcon.innerHTML = `<path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91" /><line x1="1" y1="1" x2="23" y2="23" />`;
+        } else {
+            mainRecordIcon.innerHTML = `<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />`;
+        }
+    }
+
+    function updateMicIcon() {
+        if (!mainRecordIcon) return;
+        mainRecordIcon.innerHTML = `<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>`;
+    }
+
+    function updateUploadIcon() {
+        if (!mainRecordIcon) return;
+        mainRecordIcon.innerHTML = `<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>`;
+    }
+
+    function updateSendIcon() {
+        if (!mainRecordIcon) return;
+        mainRecordIcon.innerHTML = `<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>`;
+    }
 
     function setInputMode(mode) {
+        if (currentInputMode === "call" && mode !== "call" && isCallActive) {
+            stopVoiceCall();
+        }
         currentInputMode = mode;
         modeTabs.forEach(tab => {
             if (tab) tab.classList.toggle("active", tab.dataset.mode === mode);
@@ -94,18 +147,41 @@ document.addEventListener("DOMContentLoaded", () => {
         if (textInputWrapper) {
             textInputWrapper.style.display = (mode === "text") ? "flex" : "none";
         }
+        if (callHudBanner) {
+            callHudBanner.style.display = (mode === "call" && isCallActive) ? "flex" : "none";
+        }
 
-        if (mode === "browser") {
+        if (mainRecordBtn) {
+            mainRecordBtn.classList.remove("btn-call-start", "btn-end-call", "recording");
+        }
+
+        if (mode === "call") {
+            if (isCallActive) {
+                recordBtnLabel.textContent = "End Voice Call";
+                mainRecordBtn.classList.add("btn-end-call");
+                updateCallIcon(true);
+            } else {
+                recordBtnLabel.textContent = "Start Voice Call";
+                mainRecordBtn.classList.add("btn-call-start");
+                updateCallIcon(false);
+                setOrbState("", "Ready to Call");
+            }
+        } else if (mode === "browser") {
             recordBtnLabel.textContent = isRecording ? "Stop Recording" : "Start Voice Recording";
+            updateMicIcon();
         } else if (mode === "desktop") {
             recordBtnLabel.textContent = "Hardware Mic (5s)";
+            updateMicIcon();
         } else if (mode === "upload") {
             recordBtnLabel.textContent = "Select Audio File";
+            updateUploadIcon();
         } else if (mode === "text") {
             recordBtnLabel.textContent = "Send Text Query";
+            updateSendIcon();
         }
     }
 
+    if (tabVoiceCall) tabVoiceCall.addEventListener("click", () => setInputMode("call"));
     if (tabBrowserMic) tabBrowserMic.addEventListener("click", () => setInputMode("browser"));
     if (tabDesktopMic) tabDesktopMic.addEventListener("click", () => setInputMode("desktop"));
     if (tabUpload) tabUpload.addEventListener("click", () => {
@@ -300,6 +376,279 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (totalTimeBadge && totalSec) {
             totalTimeBadge.textContent = `${totalSec}s`;
+        }
+    }
+
+    // =========================================================================
+    // 4.5. CONTINUOUS REAL-TIME VOICE CALL ENGINE (VAD + BARGE-IN)
+    // =========================================================================
+    async function startVoiceCall() {
+        primeAudioContext();
+        try {
+            vadStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                }
+            });
+
+            vadAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            vadAnalyser = vadAudioCtx.createAnalyser();
+            vadAnalyser.fftSize = 256;
+            const source = vadAudioCtx.createMediaStreamSource(vadStream);
+            source.connect(vadAnalyser);
+
+            let mimeType = "audio/webm";
+            if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+                mimeType = "audio/webm;codecs=opus";
+            } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
+                mimeType = "audio/mp4";
+            }
+
+            vadRecorder = new MediaRecorder(vadStream, { mimeType });
+            vadRecorder.ondataavailable = (e) => {
+                if (e.data && e.data.size > 0) {
+                    vadChunks.push(e.data);
+                }
+            };
+
+            vadRecorder.onstop = () => {
+                if (vadChunks.length > 0 && isCallActive) {
+                    const audioBlob = new Blob(vadChunks, { type: mimeType });
+                    vadChunks = [];
+                    dispatchCallTurn(audioBlob);
+                }
+            };
+
+            isCallActive = true;
+            isUserSpeaking = false;
+            isTurnInFlight = false;
+            vadChunks = [];
+
+            // Start call duration stopwatch
+            callStartTime = performance.now();
+            if (callDurationTimer) callDurationTimer.textContent = "00:00";
+            if (callTimerInterval) clearInterval(callTimerInterval);
+            callTimerInterval = setInterval(() => {
+                const totalSec = Math.floor((performance.now() - callStartTime) / 1000);
+                const m = String(Math.floor(totalSec / 60)).padStart(2, "0");
+                const s = String(totalSec % 60).padStart(2, "0");
+                if (callDurationTimer) callDurationTimer.textContent = `${m}:${s}`;
+            }, 1000);
+
+            // Update UI
+            if (callHudBanner) callHudBanner.style.display = "flex";
+            if (callVadStatus) callVadStatus.textContent = "Listening • Speak anytime";
+            if (bargeInTag) bargeInTag.textContent = "⚡ Barge-In Ready";
+            setOrbState("listening", "Call Active • Speak now...");
+
+            mainRecordBtn.classList.remove("btn-call-start");
+            mainRecordBtn.classList.add("btn-end-call");
+            recordBtnLabel.textContent = "End Voice Call";
+            updateCallIcon(true);
+
+            // Connect canvas visualizer to live vadStream
+            initVisualizer(vadStream);
+
+            // Start VAD Loop
+            runVadLoop();
+
+        } catch (err) {
+            console.error("Call mic access error:", err);
+            alert("Microphone access is required for the Voice Call: " + err.message);
+            stopVoiceCall();
+        }
+    }
+
+    function stopVoiceCall() {
+        isCallActive = false;
+        isUserSpeaking = false;
+        isTurnInFlight = false;
+
+        if (callTimerInterval) {
+            clearInterval(callTimerInterval);
+            callTimerInterval = null;
+        }
+
+        if (vadAnimFrame) {
+            cancelAnimationFrame(vadAnimFrame);
+            vadAnimFrame = null;
+        }
+
+        if (vadRecorder && vadRecorder.state !== "inactive") {
+            try { vadRecorder.stop(); } catch (_) { }
+        }
+        vadRecorder = null;
+        vadChunks = [];
+
+        if (vadStream) {
+            vadStream.getTracks().forEach(t => t.stop());
+            vadStream = null;
+        }
+
+        if (vadAudioCtx && vadAudioCtx.state !== "closed") {
+            try { vadAudioCtx.close(); } catch (_) { }
+            vadAudioCtx = null;
+        }
+        vadAnalyser = null;
+
+        stopVisualizer();
+
+        if (currentlyPlayingAudio) {
+            currentlyPlayingAudio.pause();
+        }
+
+        // Reset UI
+        if (callHudBanner) callHudBanner.style.display = "none";
+        mainRecordBtn.classList.remove("btn-end-call");
+        mainRecordBtn.classList.add("btn-call-start");
+        recordBtnLabel.textContent = "Start Voice Call";
+        updateCallIcon(false);
+        setOrbState("", "Call Ended • Ready to Call");
+    }
+
+    function runVadLoop() {
+        if (!vadAnalyser) return;
+        const timeData = new Uint8Array(vadAnalyser.fftSize);
+
+        function vadTick() {
+            if (!isCallActive || !vadAnalyser) return;
+
+            vadAnalyser.getByteTimeDomainData(timeData);
+            let sum = 0;
+            for (let i = 0; i < timeData.length; i++) {
+                const sample = (timeData[i] - 128) / 128;
+                sum += sample * sample;
+            }
+            const rms = Math.sqrt(sum / timeData.length);
+            const now = performance.now();
+
+            const SPEECH_RMS_THRESHOLD = 0.026;
+            const SILENCE_TIMEOUT_MS = 1350;
+            const MIN_SPEECH_DURATION_MS = 500;
+
+            const isAssistantSpeaking = currentlyPlayingAudio && !currentlyPlayingAudio.paused;
+
+            if (rms > SPEECH_RMS_THRESHOLD) {
+                consecutiveSpeechFrames++;
+
+                // --- Barge-In (Interruption Handling) ---
+                if (isAssistantSpeaking && consecutiveSpeechFrames >= 3) {
+                    console.log("⚡ Barge-in: User interrupted assistant playback!");
+                    currentlyPlayingAudio.pause();
+                    currentlyPlayingAudio.currentTime = 0;
+                    if (bargeInTag) {
+                        bargeInTag.textContent = "⚡ Interrupted!";
+                        setTimeout(() => {
+                            if (bargeInTag) bargeInTag.textContent = "⚡ Barge-In Ready";
+                        }, 2000);
+                    }
+                }
+
+                if (consecutiveSpeechFrames >= 3 && !isUserSpeaking && !isTurnInFlight) {
+                    // Speech Start
+                    isUserSpeaking = true;
+                    speechStartTimestamp = now;
+                    lastSoundTimestamp = now;
+                    vadChunks = [];
+
+                    if (vadRecorder && vadRecorder.state === "inactive") {
+                        vadRecorder.start(100);
+                    }
+
+                    setOrbState("listening", "Listening to you speak...");
+                    if (callVadStatus) callVadStatus.textContent = "You are speaking...";
+                } else if (isUserSpeaking) {
+                    lastSoundTimestamp = now;
+                }
+            } else {
+                consecutiveSpeechFrames = 0;
+                if (isUserSpeaking) {
+                    const silenceDuration = now - lastSoundTimestamp;
+                    const speechDuration = now - speechStartTimestamp;
+
+                    if (silenceDuration > SILENCE_TIMEOUT_MS) {
+                        if (speechDuration >= MIN_SPEECH_DURATION_MS) {
+                            // Speech End -> Finalize turn
+                            isUserSpeaking = false;
+                            if (callVadStatus) callVadStatus.textContent = "Amirlan thinking (Gemini)...";
+                            setOrbState("analyzing", "Reasoning & Searching Knowledge...");
+                            if (vadRecorder && vadRecorder.state === "recording") {
+                                vadRecorder.stop();
+                            }
+                        } else {
+                            // Discard false trigger / background tap
+                            isUserSpeaking = false;
+                            vadChunks = [];
+                            if (vadRecorder && vadRecorder.state === "recording") {
+                                vadRecorder.stop();
+                            }
+                            setOrbState("listening", "Call Active • Speak anytime");
+                            if (callVadStatus) callVadStatus.textContent = "Listening • Speak anytime";
+                        }
+                    }
+                }
+            }
+
+            vadAnimFrame = requestAnimationFrame(vadTick);
+        }
+
+        vadAnimFrame = requestAnimationFrame(vadTick);
+    }
+
+    async function dispatchCallTurn(audioBlob) {
+        if (!isCallActive) return;
+        isTurnInFlight = true;
+
+        startPipelineTimers();
+        simulateLiveStepTransitions();
+
+        const formData = new FormData();
+        const extension = audioBlob.type.includes("mp4") ? "mp4" : "webm";
+        formData.append("audio", audioBlob, `call_input.${extension}`);
+        formData.append("voice", getSelectedVoice());
+        formData.append("is_call_mode", "true");
+
+        try {
+            const res = await fetch("/api/voice/process", {
+                method: "POST",
+                body: formData
+            });
+            const data = await res.json();
+            isTurnInFlight = false;
+
+            if (!isCallActive) return;
+
+            handlePipelineResponse(data);
+
+            // Wait for audio playback to finish, then automatically re-arm for next turn!
+            const allAudios = chatFeed.querySelectorAll("audio");
+            if (allAudios.length > 0) {
+                const latestAudio = allAudios[allAudios.length - 1];
+                const rearmCall = () => {
+                    if (isCallActive) {
+                        console.log("Assistant turn complete -> Call re-armed for user voice.");
+                        setOrbState("listening", "Call Active • Listening (Speak anytime)");
+                        if (callVadStatus) callVadStatus.textContent = "Listening • Speak anytime";
+                    }
+                };
+                latestAudio.addEventListener("ended", rearmCall, { once: true });
+                latestAudio.addEventListener("error", rearmCall, { once: true });
+            } else {
+                setOrbState("listening", "Call Active • Listening (Speak anytime)");
+                if (callVadStatus) callVadStatus.textContent = "Listening • Speak anytime";
+            }
+
+        } catch (err) {
+            console.error("Call turn network error:", err);
+            isTurnInFlight = false;
+            stopPipelineTimers();
+            if (isCallActive) {
+                appendAssistantMessage("Network error during call: " + err.message);
+                setOrbState("listening", "Call Active • Listening (Speak anytime)");
+                if (callVadStatus) callVadStatus.textContent = "Listening • Speak anytime";
+            }
         }
     }
 
@@ -732,6 +1081,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
             latestAudio.play().then(() => {
                 setOrbState("speaking", "Speaking • Narakeet Audio");
+                if (isCallActive && callVadStatus) {
+                    callVadStatus.textContent = "Amirlan speaking...";
+                }
                 const btn = latestAudio.parentElement.querySelector(".bubble-play-btn");
                 if (btn) {
                     btn.querySelector(".icon-play").style.display = "none";
@@ -740,6 +1092,9 @@ document.addEventListener("DOMContentLoaded", () => {
             }).catch(e => {
                 console.warn("Autoplay deferred:", e);
                 setOrbState("", "Response Ready • Click Play in Chat");
+                if (isCallActive && callVadStatus) {
+                    callVadStatus.textContent = "Listening • Speak anytime";
+                }
             });
         }
     }
@@ -1228,7 +1583,13 @@ document.addEventListener("DOMContentLoaded", () => {
     // Record / Submit Button Listeners
     if (mainRecordBtn) {
         mainRecordBtn.addEventListener("click", () => {
-            if (currentInputMode === "browser") {
+            if (currentInputMode === "call") {
+                if (isCallActive) {
+                    stopVoiceCall();
+                } else {
+                    startVoiceCall();
+                }
+            } else if (currentInputMode === "browser") {
                 if (isRecording) {
                     stopBrowserRecording();
                 } else {
@@ -1266,6 +1627,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // Initial metrics background sync
     fetchDevConfig();
 
-    console.log("⚡ Amirlan Voice AI Agent UI initialized.");
+    // Default to Live Voice Call mode
+    setInputMode("call");
+
+    console.log("⚡ Amirlan Voice AI Agent UI initialized (Continuous Voice Call enabled).");
 });
 

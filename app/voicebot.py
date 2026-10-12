@@ -1085,7 +1085,7 @@ class AmirlanVoicebot:
     # =========================================================================
     # MASTER PIPELINE (Stages 1 -> 6 Orchestration with All Guardrails)
     # =========================================================================
-    def run_full_pipeline(self, audio_bytes: Optional[bytes] = None, text_query: Optional[str] = None, voice: str = "Ankhmaa") -> Dict[str, Any]:
+    def run_full_pipeline(self, audio_bytes: Optional[bytes] = None, text_query: Optional[str] = None, voice: str = "Ankhmaa", is_call_mode: bool = False) -> Dict[str, Any]:
         """Runs the complete 6-stage end-to-end voicebot workflow with multi-layered guardrails."""
         start_time = time.time()
         stage_logs = []
@@ -1207,11 +1207,12 @@ class AmirlanVoicebot:
         # --- Operational Safeguard 3: Consecutive Unclear Audio Circuit Breaker ---
         if transcript == "Дуу хоолой тодорхой сонсогдсонгүй.":
             self.consecutive_unclear_count += 1
-            if self.consecutive_unclear_count >= 2:
-                self.log_event("CircuitBreaker", "Repeated unclear audio (2x) tripped automatic human escalation", level="WARN")
+            threshold = 3 if is_call_mode else 2
+            if self.consecutive_unclear_count >= threshold:
+                self.log_event("CircuitBreaker", f"Repeated unclear audio ({threshold}x) tripped automatic human escalation", level="WARN")
                 intent = {"category": "human_escalation", "topic": "Сонсгол тодорхойгүй", "confidence": 1.0, "is_escalation_needed": True}
                 retrieval = {"search_query": "site:khanbank.com", "search_results": "Тодорхойгүй яриа.", "verified_context": "", "source_url": "https://www.khanbank.com"}
-                decision = {"decision": "escalate", "reason": "Яриа 2 удаа дараалан тодорхойгүй байсан тул операторт шилжүүллээ (Circuit Breaker).", "requires_human": True}
+                decision = {"decision": "escalate", "reason": f"Яриа {threshold} удаа дараалан тодорхойгүй байсан тул операторт шилжүүллээ (Circuit Breaker).", "requires_human": True}
                 escalation_data = self.execute_escalation_protocol(transcript, intent)
                 response_text = (
                     "Таны яриа тодорхой сонсогдохгүй байгаа тул бид таныг оператортой шууд холбож байна. "
@@ -1227,6 +1228,21 @@ class AmirlanVoicebot:
                     "decision": decision,
                     "escalation": escalation_data,
                     "is_escalated": True,
+                    "stage_logs": stage_logs,
+                    "execution_time_sec": round(time.time() - start_time, 2)
+                }
+            elif is_call_mode:
+                response_text = "Уучлаарай, таны яриа сонсогдсонгүй. Та асуултаа дахин хэлнэ үү."
+                audio_fn = self.synthesize_speech_narakeet(response_text, voice=voice)
+                return {
+                    "transcript": transcript,
+                    "response_text": response_text,
+                    "audio_url": f"/audio/{audio_fn}",
+                    "intent": {"category": "general_inquiry", "topic": "Дахин сонсох", "confidence": 0.9},
+                    "retrieval": {"search_query": "", "search_results": "Тодорхойгүй яриа."},
+                    "decision": {"decision": "answer", "reason": "Яриаг дахин сонсох хүсэлт."},
+                    "escalation": None,
+                    "is_escalated": False,
                     "stage_logs": stage_logs,
                     "execution_time_sec": round(time.time() - start_time, 2)
                 }
